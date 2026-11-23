@@ -1,0 +1,173 @@
+#include <windows.h>
+#include <cstdio>
+#include <filesystem>
+#include <locale>
+#include <sstream>
+#include <string>
+#include <vector>
+#include "veyra/engine/ExportFeaturePolicy.h"
+#include "veyra/engine/ExportOptions.h"
+
+namespace {
+using namespace veyra::engine;
+constexpr unsigned MaxParts = 4;
+struct Job {
+    DWORD signature = 0x56585931, version = 15, bytes = sizeof(Job);
+    EnhancementSettings settings;
+    EffectChain chain;
+    wchar_t input[32768]{}, output[32768]{}, temporary[32768]{};
+    ExportMediaOptions media;
+    unsigned hevc = 0, maxFrames = 0;
+    int audioStreamIndex = -1;
+    double trimStartSeconds = 0, trimEndSeconds = 0;
+    uint32_t rateControl = 2;
+    volatile LONG64 sourceFrames = 0, generated = 0, holds = 0, encoded = 0;
+    volatile LONG messageLock = 0;
+    wchar_t message[1024]{};
+    volatile LONG cancel = 0, pause = 0, watching = 0, state = 1, progress = 0;
+    double resumeAtSeconds = 0, segmentOriginSeconds = 0;
+    unsigned priorCount = 0, resumeAttempt = 0;
+    double priorOrigins[MaxParts]{};
+    wchar_t priorPaths[MaxParts][2048]{};
+};
+
+struct Handle {
+    HANDLE value;
+    ~Handle() { if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value); }
+};
+
+void print(const std::wstring& value) {
+    const int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (!size) return;
+    std::string line(size, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, line.data(), size, nullptr, nullptr);
+    std::puts(line.c_str());
+    std::fflush(stdout);
+}
+
+int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
+        const wchar_t* cancelFile, NrRuntime runtime, const std::vector<NrLayerSettings>& layers,
+        bool hevc, unsigned maxFrames, double start, double end) {
+    const std::wstring temporary = std::wstring(output) + L".processing-" + std::to_wstring(GetCurrentProcessId());
+    if (wcslen(input) >= 32768 || temporary.size() >= 32768 || GetFileAttributesW(output) != INVALID_FILE_ATTRIBUTES) {
+        print(L"Escolha um caminho de saída novo e válido.");
+        return 1;
+    }
+
+    SECURITY_ATTRIBUTES security{sizeof(security), nullptr, TRUE};
+    Handle mapping{CreateFileMappingW(INVALID_HANDLE_VALUE, &security, PAGE_READWRITE, 0, sizeof(Job), nullptr)};
+    if (!mapping.value) return 1;
+    auto* shared = static_cast<Job*>(MapViewOfFile(mapping.value, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Job)));
+    if (!shared) return 1;
+    new(shared) Job{};
+    auto& job = *shared;
+    job.settings.nr = !layers.empty();
+    job.settings.nrRuntime = runtime;
+    job.settings.nrLayerCount = static_cast<uint32_t>(layers.size());
+    std::copy(layers.begin(), layers.end(), job.settings.nrLayers.begin());
+    job.settings = freezeExportSettings(job.settings);
+    job.chain = toChain(job.settings);
+    fromChain(job.chain, job.settings);
+    job.maxFrames = maxFrames;
+    job.trimStartSeconds = start;
+    job.trimEndSeconds = end;
+    job.hevc = hevc;
+    job.media.audio.policy = ExportTrackPolicy::All;
+    wcscpy_s(job.input, input);
+    wcscpy_s(job.output, output);
+    wcscpy_s(job.temporary, temporary.c_str());
+    Handle partial{CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr)};
+    if (partial.value == INVALID_HANDLE_VALUE) {
+        UnmapViewOfFile(shared);
+        print(L"Não foi possível criar o arquivo temporário ao lado do destino.");
+        return 1;
+    }
+    CloseHandle(partial.value);
+    partial.value = nullptr;
+
+    SIZE_T attributeBytes = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
+    std::vector<unsigned char> attributes(attributeBytes);
+    STARTUPINFOEXW startup{};
+    startup.StartupInfo.cb = sizeof(startup);
+    startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
+    PROCESS_INFORMATION process{};
+    std::wstring command = L"\"" + std::wstring(engine) + L"\" --export-worker "
+        + std::to_wstring(reinterpret_cast<uintptr_t>(mapping.value));
+    const auto directory = std::filesystem::path(engine).parent_path();
+    const bool initialized = InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeBytes);
+    const bool launched = initialized
+        && UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            &mapping.value, sizeof(HANDLE), nullptr, nullptr)
+        && CreateProcessW(engine, command.data(), nullptr, nullptr, TRUE,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, nullptr, directory.c_str(),
+            &startup.StartupInfo, &process);
+    if (initialized) DeleteProcThreadAttributeList(startup.lpAttributeList);
+    DWORD code = 1;
+    if (launched) {
+        Handle worker{process.hProcess}, thread{process.hThread};
+        print(L"WORKER " + std::to_wstring(process.dwProcessId));
+        LONG last = -1;
+        ULONGLONG cancelledAt = 0;
+        while (WaitForSingleObject(worker.value, 125) == WAIT_TIMEOUT) {
+            const LONG progress = InterlockedCompareExchange(&job.progress, 0, 0);
+            if (progress != last) {
+                print(L"PROGRESS " + std::to_wstring(progress));
+                last = progress;
+            }
+            if (!cancelledAt && GetFileAttributesW(cancelFile) != INVALID_FILE_ATTRIBUTES) {
+                InterlockedExchange(&job.cancel, 1);
+                cancelledAt = GetTickCount64();
+            }
+            if (cancelledAt && GetTickCount64() - cancelledAt > 5000) TerminateProcess(worker.value, 3);
+        }
+        GetExitCodeProcess(worker.value, &code);
+        if (code != 0 && job.message[0]) print(job.message);
+        else if (code != 0 && code != 3) print(L"O motor encerrou sem concluir o vídeo. Código " + std::to_wstring(code));
+    } else {
+        print(L"Não foi possível iniciar o motor de processamento.");
+    }
+    UnmapViewOfFile(shared);
+    DeleteFileW(temporary.c_str());
+    return code == 0 ? 0 : code == 3 ? 3 : 1;
+}
+}
+
+int wmain(int argc, wchar_t** argv) {
+    if (argc < 9 || argc > 9 + kMaxNrInstances) return 2;
+    try {
+        auto readTime = [](const wchar_t* value) {
+            std::wistringstream stream(value);
+            stream.imbue(std::locale::classic());
+            double seconds;
+            if (!(stream >> seconds) || !stream.eof() || !std::isfinite(seconds) || seconds < 0)
+                throw std::invalid_argument("Invalid time");
+            return seconds;
+        };
+        const std::wstring model = argv[8];
+        if (model != L"original" && model != L"sf-performance" && model != L"sf-legacy"
+            && model != L"amd-small" && model != L"amd-original")
+            throw std::invalid_argument("Invalid model");
+        const auto runtime = model.starts_with(L"amd-") ? NrRuntime::LmxxfAmd
+            : model == L"original" ? NrRuntime::NvidiaOriginal : NrRuntime::Ampere;
+        std::vector<NrLayerSettings> layers;
+        for (int index = 9; index < argc; ++index) {
+            std::wistringstream stream(argv[index]);
+            stream.imbue(std::locale::classic());
+            NrLayerSettings layer;
+            int policy;
+            if (!(stream >> policy >> layer.model.intensity >> layer.model.tone >> layer.model.structure) || !stream.eof())
+                throw std::invalid_argument("Invalid layer");
+            layer.runtime = runtime;
+            layer.model.performance = model == L"sf-performance" || model == L"amd-small";
+            layer.enabled = true;
+            layer.sizePolicy = static_cast<veyra::pipeline::NrSizePolicy>(policy);
+            layers.push_back(layer);
+        }
+        return run(argv[1], argv[2], argv[3], argv[4], runtime, layers,
+            wcscmp(argv[5], L"hevc") == 0, 0, readTime(argv[6]), readTime(argv[7]));
+    } catch (const std::exception&) {
+        print(L"Falha ao preparar o processamento.");
+        return 1;
+    }
+}

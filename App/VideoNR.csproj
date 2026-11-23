@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>VideoNR</AssemblyName>
+    <AssemblyTitle>Vídeo NR Editor</AssemblyTitle>
+    <Product>Vídeo NR Editor</Product>
+    <Description>Editor de vídeo com renderização neural e exportação offline</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../Engine.exe" LogicalName="VideoNR.Engine.exe" />
+  </ItemGroup>
+</Project>
+

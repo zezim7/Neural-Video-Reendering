@@ -1,0 +1,732 @@
+#pragma once
+#include "veyra/engine/VideoHdrSettings.h"
+#include "veyra/engine/HdrOutputTuning.h"
+#include <cmath>
+#include <array>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include "veyra/pipeline/ResolutionPlan.h"
+#include "veyra/source/CaptureBuffer.h"
+#include "veyra/engine/ColorSettings.h"
+#include "veyra/engine/AntiAliasSettings.h"
+#include "veyra/engine/BeautySettings.h"
+namespace veyra::engine {
+inline constexpr uint32_t kMaxColorInstances = 6;
+inline constexpr uint32_t kMaxNrInstances = 4;
+// Anti-flicker route for the NR temporal pass. The tiers come from Magpie's
+// DLSSNRTemporal (GPL-3.0, commit 3841698): see shaders/NrTemporal.hlsl.
+//   Off        - no temporal accumulation at all.
+//   Static     - accumulate only where the source is not moving; motion is
+//                published immediately. The safest tier.
+//   Flow       - motion-reprojected accumulation with a fixed 80 ms EMA. This is
+//                the behaviour the pass had before the tiers existed, so it
+//                stays the value a legacy `temporal=true` maps onto.
+//   FlowPlus   - as Flow, plus a 60 ms attack / 180 ms release memory and an
+//                explicit rejection of a correction whose direction reverses.
+//   LowFrequency - as Flow, but the accumulated signal is a half-resolution
+//                residual; this frame's high frequency rides through untouched.
+enum class NrAntiFlicker : uint8_t { Off, Static, Flow, FlowPlus, LowFrequency };
+// Narrowing for the wire and preset formats, which store this as one integer.
+inline bool validNrAntiFlicker(NrAntiFlicker v) {
+    return v>=NrAntiFlicker::Off&&v<=NrAntiFlicker::LowFrequency;
+}
+// NR inference reuse, realtime preview only (docs/NR_INFERENCE_REUSE_2026-11-07.md).
+// A reused frame skips NR inference and carries the previous frame's NR change
+// along the optical flow; the next frame always infers again. Off infers every
+// frame. Auto reuses only while the preview cannot keep up. Half, Third and
+// Quarter reuse one frame in every 2, 3 and 4. Export, paused frames and
+// images always infer every frame whatever this says.
+enum class NrReuseMode : uint8_t { Off, Auto, Half, Third, Quarter };
+inline bool validNrReuseMode(NrReuseMode v) {
+    return v>=NrReuseMode::Off&&v<=NrReuseMode::Quarter;
+}
+// Preserve persisted values 0/1/2; the old Fsr value now explicitly selects
+// the 3.1 provider. Fsr4 requires a real ML provider, never an auto fallback.
+// AmdFrc: AMD AMF FRC, the video frame interpolation of the AMD driver (gfx::AmfFrcBackend).
+enum class FrameGenerationBackend { Dlss = 0, XeSS = 1, Fsr = 2, Fsr4 = 3, Vfg = 4, Anr = 5, AmdFrc = 6 };
+constexpr bool fsrFrameGeneration(FrameGenerationBackend backend) {
+    return backend == FrameGenerationBackend::Fsr || backend == FrameGenerationBackend::Fsr4;
+}
+// Providers that generate exactly one frame per pair.
+constexpr bool twoXFrameGeneration(FrameGenerationBackend backend) {
+    return fsrFrameGeneration(backend) || backend == FrameGenerationBackend::AmdFrc;
+}
+// Not NVIDIA-only (AMD FRC runs on AMD GPUs; its own runtime refuses others).
+constexpr bool crossVendorFrameGeneration(FrameGenerationBackend backend) {
+    return backend == FrameGenerationBackend::Anr || backend == FrameGenerationBackend::XeSS || fsrFrameGeneration(backend) ||
+        backend == FrameGenerationBackend::AmdFrc;
+}
+// Frame generation that runs inside the present sink (external frame
+// interpolation swapchain) instead of the in-graph DLSSG backend.
+constexpr bool presentSinkFrameGeneration(FrameGenerationBackend backend) {
+    return backend==FrameGenerationBackend::XeSS;
+}
+// Multipliers the UI offers. 5X is intentionally absent: the DLSS runtime
+// exposes 2/3/4/6 and MFG buyers pick from those; 1 = generation off.
+inline constexpr uint32_t kFgMultiplierChoices[]={1,2,3,4,6};
+inline constexpr uint32_t kAnrMultiplierChoices[]={1,2,3,4,5,6};
+inline constexpr uint32_t kVfgMultiplierChoices[]={1,2,3,4,5,6,7,8};
+// VFG quality: 0-2 run one NvVFX model (Low/Medium/High) for every subframe.
+// 3-5 are mixed tiers (3 High+Medium, 4 High+Low, 5 Medium+Low): one subframe
+// per source pair, the one nearest the middle where interpolation is hardest,
+// uses the first model; the others, closer to a real frame, use the second.
+// Every subframe is a full VFG inference (the SDK shares nothing between
+// them), so a pair costs one first-model run plus N-2 second-model runs.
+inline constexpr uint32_t kVfgQualityCount=6;
+constexpr bool vfgMixedQuality(uint32_t quality){return quality>=3&&quality<kVfgQualityCount;}
+constexpr uint32_t vfgPrimaryMode(uint32_t quality){return quality<3?quality:quality==5?1u:2u;}
+constexpr uint32_t vfgSecondaryMode(uint32_t quality){return quality==3?1u:quality==4||quality==5?0u:vfgPrimaryMode(quality);}
+// The subframe of a multiplier-M group that uses the first model: t=1/2 for
+// even M, the one just after the middle for odd M (2X: its only subframe).
+constexpr uint32_t vfgPrimarySubframe(uint32_t multiplier){return (multiplier+1)/2;}
+inline constexpr size_t kFgMultiplierChoiceCount=sizeof(kFgMultiplierChoices)/sizeof(kFgMultiplierChoices[0]);
+// Export bitrate presets in Mbps; index 0 keeps the encoder's constant-quality
+// default. Labels are the UI strings for the same order.
+inline constexpr uint32_t kExportBitrateChoices[]={0,6,10,16,24,40,60,100,150,200};
+inline constexpr size_t kExportBitrateChoiceCount=sizeof(kExportBitrateChoices)/sizeof(kExportBitrateChoices[0]);
+inline constexpr const wchar_t* kExportBitrateLabels[]={L"自动 · 恒定质量",L"6 Mbps",L"10 Mbps",L"16 Mbps",L"24 Mbps",L"40 Mbps",L"60 Mbps",L"100 Mbps",L"150 Mbps",L"200 Mbps"};
+inline size_t exportBitrateIndex(uint32_t mbps){for(size_t i=0;i<kExportBitrateChoiceCount;++i)if(kExportBitrateChoices[i]==mbps)return i;return 0;}
+// videoSrQuality values: 0 = DLSS SR, 1..4 = RTX video SR quality steps,
+// 5 = AMD FSR upscaling (vendor neutral; verified on an NVIDIA adapter).
+inline constexpr uint32_t kVideoSrFsr=5;
+// Fresh SR selections use RTX Video SR medium; explicit saved selections retain
+// their numeric IDs. The UI seeds FSR separately on AMD/Intel adapters.
+inline constexpr uint32_t kDefaultVideoSrQuality=2;
+// RTX Video SR comes in three model families, each chosen by tier (1 low,
+// 2 medium, 3 high, 4 ultra). Stored values keep the SDK numbers:
+// - standard 1..4: RTX Video SDK through NGX, trained on compressed video;
+// - high bitrate 16..19 and streaming 21/23 (medium/ultra only, Ampere or
+//   newer): NVIDIA Video Effects VideoSuperRes. High bitrate skips the
+//   compression clean-up to keep clean detail; streaming cleans hardest.
+// Every family runs the supersample shrink; double SR takes every SR backend
+// (DLSS SR and FSR too, 2026-11-08). Only the standard family restores a source
+// already at the target size.
+enum class VideoSrFamily : uint32_t { Standard = 0, HighBitrate = 1, Streaming = 2 };
+inline constexpr uint32_t kVideoSrFamilyCount=3;
+constexpr bool ngxVideoSr(uint32_t q){return q>=1&&q<=4;}
+constexpr bool vfxVideoSr(uint32_t q){return (q>=16&&q<=19)||q==21||q==23;}
+constexpr bool vfxVideoSrNeedsAmpere(uint32_t q){return q==21||q==23;}
+constexpr bool rtxVideoSr(uint32_t q){return ngxVideoSr(q)||vfxVideoSr(q);}
+constexpr bool validVideoSrQuality(uint32_t q){return q<=kVideoSrFsr||vfxVideoSr(q);}
+// DLSS SR and FSR are temporal: they read the SR motion source. RTX Video SR is spatial.
+constexpr bool temporalVideoSr(uint32_t q){return q==0||q==kVideoSrFsr;}
+inline constexpr uint32_t kVfxVideoSrQualities[]={16,17,18,19,21,23};
+constexpr VideoSrFamily videoSrFamily(uint32_t q){
+    return q>=16&&q<=19?VideoSrFamily::HighBitrate:q==21||q==23?VideoSrFamily::Streaming:VideoSrFamily::Standard;
+}
+constexpr uint32_t videoSrTier(uint32_t q){return q>=16&&q<=19?q-15:q==21?2u:q==23?4u:q;}
+// Streaming has no low or high tier: low and medium give medium, high and ultra give ultra.
+constexpr uint32_t videoSrQualityFor(VideoSrFamily family,uint32_t tier){
+    tier=tier<1?1u:tier>4?4u:tier;
+    return family==VideoSrFamily::HighBitrate?15u+tier:family==VideoSrFamily::Streaming?(tier<=2?21u:23u):tier;
+}
+// DLSS SR model (videoSrQuality 0 only): 0 = DLSS 4 transformer (preset K,
+// what DLSS SR always used here), 1 = DLSS 4.5 second-generation transformer
+// (preset M), 2 = DLSS 4.5 Ultra Performance model (preset L). Both 4.5
+// models ship in the DLSS 310.5+ runtime already packaged (310.7).
+inline constexpr uint32_t kDlssSrModelCount=3;
+// Capture audio ingress policy. Automatic is what the pipeline did before the
+// manual selector existed; the other two exist because Dolby/DTS passthrough
+// negotiation depends on the device and the console, and users reported that
+// "let the capture card decide" is not reliable in practice.
+enum class CaptureAudioIngress { Auto, PcmOnly, BitstreamPreferred };
+constexpr std::wstring_view captureAudioIngressName(CaptureAudioIngress mode) {
+    switch(mode) {
+    case CaptureAudioIngress::PcmOnly: return L"强制线性 PCM";
+    case CaptureAudioIngress::BitstreamPreferred: return L"位流优先（Dolby/DTS 直通解码）";
+    case CaptureAudioIngress::Auto: break;
+    }
+    return L"自动（优先 PCM，必要时位流解码）";
+}
+// Keep retired 0/1 IDs decodable; new builds migrate them to the SF slot.
+// 3 remains the explicitly selected NVIDIA original, 4 the AMD backend.
+enum class NrRuntime { Original = 0, Community = 1, Ampere = 2, NvidiaOriginal = 3, LmxxfAmd = 4 };
+constexpr bool validNrRuntime(NrRuntime runtime) {
+    return runtime == NrRuntime::Original || runtime == NrRuntime::Community ||
+           runtime == NrRuntime::Ampere || runtime == NrRuntime::NvidiaOriginal || runtime == NrRuntime::LmxxfAmd;
+}
+// Lecram and the older RTX40 community DLL are no longer packaged. Explicit
+// NVIDIA-original and AMD choices survive migration; no DLL hash loading lock.
+constexpr NrRuntime currentNrRuntime(NrRuntime runtime) {
+    return runtime == NrRuntime::Original || runtime == NrRuntime::Community ? NrRuntime::Ampere : runtime;
+}
+constexpr std::string_view nrRuntimeName(NrRuntime runtime) {
+    switch(runtime) {
+    case NrRuntime::Original:return "community-Lecram-RTX50";
+    case NrRuntime::Community:return "community-SF-RTX20-RTX50-legacy40";
+    case NrRuntime::Ampere:return "community-SF-RTX20-RTX50";
+    case NrRuntime::NvidiaOriginal:return "NVIDIA-original-RTX50-310.8.0";
+    case NrRuntime::LmxxfAmd:return "AMD-NR-auto"; // persisted legacy ID4, RX7000/9000 providers route by actual adapter
+    }
+    return "unknown";
+}
+enum class FlowQuality { Performance, Balanced, Quality };
+enum class OpticalFlowBackend { Nvidia, AmdFidelityFx, GpuDis };
+// Persisted IDs must stay stable. 2..4 are legacy identification hints, no longer
+// offered by the UI; importing/applying one uses automatic duplicate removal.
+enum class ContentRate { Transport=0, Auto=1, Fps30=2, Fps50=3, Fps60=4, Capture60To30=5 };
+constexpr ContentRate currentContentRate(ContentRate mode) {
+    return mode>=ContentRate::Fps30&&mode<=ContentRate::Fps60?ContentRate::Auto:mode;
+}
+enum class AudioSyncMode { Automatic, Manual, Off };
+enum class HdrOutputMode { Hdr10, ScRgb };
+enum class MotionSource { Zero, OpticalFlow, Automatic };
+constexpr bool motionUsesFlow(MotionSource source,FrameGenerationBackend backend=FrameGenerationBackend::Dlss) {
+    // VFG and AMD FRC estimate motion themselves from the two pictures.
+    return backend!=FrameGenerationBackend::Vfg&&backend!=FrameGenerationBackend::AmdFrc&&
+        (source==MotionSource::OpticalFlow||(source==MotionSource::Automatic&&backend!=FrameGenerationBackend::XeSS));
+}
+constexpr std::string_view frameGenerationBackendName(FrameGenerationBackend backend) {
+    switch(backend) {
+    case FrameGenerationBackend::Dlss: return "DLSS";
+    case FrameGenerationBackend::XeSS: return "XeSS";
+    case FrameGenerationBackend::Fsr: return "AMD-FSR";
+    case FrameGenerationBackend::Fsr4: return "AMD-FSR4-ML";
+    case FrameGenerationBackend::Vfg: return "NVIDIA-VFG";
+    case FrameGenerationBackend::Anr: return "ANR-FG";
+    case FrameGenerationBackend::AmdFrc: return "AMD-FRC";
+    }
+    return "unknown";
+}
+constexpr std::string_view opticalFlowBackendName(OpticalFlowBackend backend) {
+    switch(backend) {
+    case OpticalFlowBackend::Nvidia: return "NVIDIA_NVOF";
+    case OpticalFlowBackend::AmdFidelityFx: return "AMD_FIDELITYFX_OF";
+    case OpticalFlowBackend::GpuDis: return "GPU_DIS_FAST";
+    }
+    return "unknown";
+}
+struct NrSettings {
+    float intensity=1,tone=1,structure=1,skin=-1;
+    int32_t style=0,autoMask=0,uiCorrection=0;
+    bool performance=true; // SF: B/A; AMD 0.44: Small/Original. Create-time model choice.
+    bool operator==(const NrSettings&) const = default;
+};
+// Create-time I32 contract, verified against both embedded models in the
+// user-provided 310.9.16 runtime. Original/AMD keep their previous parameters.
+constexpr int32_t nrRenderPreset(NrRuntime runtime,const NrSettings& model) {
+    return currentNrRuntime(runtime)==NrRuntime::Ampere ? (model.performance?2:1) : 0;
+}
+constexpr bool nrUsesPerformanceModel(NrRuntime runtime) {
+    return currentNrRuntime(runtime)==NrRuntime::Ampere || runtime==NrRuntime::LmxxfAmd;
+}
+constexpr int32_t nrModelSelection(NrRuntime runtime,const NrSettings& model) {
+    return nrUsesPerformanceModel(runtime) ? (model.performance?2:1) : 0;
+}
+struct NrCorrectionSettings {
+    bool enabled=false,automatic=true;
+    // Manual values survive switching automatic control on and off.
+    float hue=1,chroma=.75f,highlight=1,compression=.75f,stability=.8f;
+    // New manual protections default to zero so schema29/schema8 keep their
+    // original five-control meaning. Auto presets are explicit per style.
+    float neutral=0,colorKeep=0,lumaKeep=0,shadow=0,autoAmount=1;
+    bool operator==(const NrCorrectionSettings&) const = default;
+    bool valid() const {
+        for(float v:{hue,chroma,highlight,compression,stability,neutral,colorKeep,lumaKeep,shadow,autoAmount})
+            if(!std::isfinite(v)||v<0||v>1)return false;
+        return true;
+    }
+    bool usesHistory() const {return enabled&&(automatic?autoAmount>0:stability>0);}
+    bool extendedControls() const {return neutral!=0||colorKeep!=0||lumaKeep!=0||shadow!=0||autoAmount!=1;}
+    static std::array<float,9> automaticValues(int32_t style) {
+        // Style 1 changes contrast/neutral saturation more; style 2 leaves
+        // larger colored-area drift. Preserve source chromaticity separately
+        // from texture/lightness; never replace the requested model style.
+        if(style==1)return {1,1,1,1,1,1,.9f,.25f,.55f};
+        if(style==2)return {1,1,1,1,1,1,.95f,.2f,.4f};
+        return {1,1,1,1,1,1,0,0,0};
+    }
+    void useAutomaticValues(int32_t style) {
+        auto v=automaticValues(style);for(auto& value:v)value*=autoAmount;
+        hue=v[0];chroma=v[1];highlight=v[2];compression=v[3];stability=v[4];
+        neutral=v[5];colorKeep=v[6];lumaKeep=v[7];shadow=v[8];automatic=false;
+    }
+    std::array<float,16> constants(bool hdr=false,int32_t style=0) const {
+        auto v=automatic?automaticValues(style):std::array<float,9>{hue,chroma,highlight,compression,stability,neutral,colorKeep,lumaKeep,shadow};
+        if(automatic)for(auto& value:v)value*=autoAmount;
+        return {enabled?1.f:0.f,v[0],v[1],v[2],v[3],v[4],automatic?1.f:0.f,hdr?1.f:0.f,
+                v[5],v[6],v[7],v[8],0,0,0,0};
+    }
+};
+struct ResidualSettings {
+    float total=1,darken=1,brighten=1,color=1,luminance=1;
+    NrCorrectionSettings correction{};
+    bool operator==(const ResidualSettings&) const = default;
+    bool extendedSchema() const {return total>2||correction!=NrCorrectionSettings{};}
+};
+// Fixed storage: settings also cross the export worker's shared-memory POD.
+// Runtime and NR/SR order are shared by active instances, not separate adapters.
+struct NrLayerSettings {
+    NrSettings model{};
+    ResidualSettings residual{};
+    NrRuntime runtime=NrRuntime::Ampere;
+    bool temporal=false,lowLatencyPairing=false,enabled=false;
+    // The tier only applies when `temporal` is set; `temporal=false` forces Off.
+    // Kept as a separate field so an older preset that only knew the boolean
+    // keeps meaning exactly what it meant (Flow).
+    NrAntiFlicker antiFlicker=NrAntiFlicker::Flow;
+    pipeline::NrSizePolicy sizePolicy=pipeline::NrSizePolicy::Realtime;
+    bool operator==(const NrLayerSettings&) const = default;
+    bool usesTemporal() const {return residual.correction.enabled?residual.correction.usesHistory():temporal;}
+};
+struct ProtectionRect {
+    float left=0,top=0,right=0,bottom=0;
+    // The ellipse inscribed in the rectangle instead of the rectangle itself.
+    bool ellipse=false;
+    bool empty()const{return left==right||top==bottom;}
+    bool operator==(const ProtectionRect&)const=default;
+};
+// Shader constants for one region (NrProtection.hlsli). An ellipse is sent with
+// left and right swapped: the constant layout stays the same and a rectangle's
+// constants stay byte-for-byte what they were.
+inline std::array<float,4> protectionConstants(const ProtectionRect& q){
+    return q.ellipse?std::array<float,4>{q.right,q.top,q.left,q.bottom}:std::array<float,4>{q.left,q.top,q.right,q.bottom};
+}
+struct ProtectionSettings {
+    bool enabled=false;
+    float featherPixels=2;
+    std::array<ProtectionRect,4> regions{};
+    bool operator==(const ProtectionSettings&)const=default;
+    std::string validate()const{
+        // Upper bound is 64 px at the working extent; TiledImageProcessor keeps
+        // its tile halo above this value so export tiles cannot clip the ramp.
+        if(!std::isfinite(featherPixels)||featherPixels<0||featherPixels>64)return "invalid protection feather";
+        // An ellipse may extend past the frame: a tiled export maps it into
+        // tile space without clipping, since clipping would change its shape.
+        for(auto r:regions){const float low=r.ellipse?-64.0f:0.0f,high=r.ellipse?65.0f:1.0f;
+            for(float v:{r.left,r.top,r.right,r.bottom})if(!std::isfinite(v)||v<low||v>high)return "invalid protection rectangle";
+            if(r.left>r.right||r.top>r.bottom)return "inverted protection rectangle";}
+        return {};
+    }
+};
+struct EnhancementSettings {
+    uint64_t revision=1;
+    NrSettings model;
+    ResidualSettings residual;
+    ProtectionSettings protection;
+    ProtectionSettings exclusion; // final raw-source mask, including generated frames
+    bool nr=false,sr=false;
+    bool lowLatency=false; // preview only: NR before SR, opt-in
+    NrRuntime nrRuntime=NrRuntime::Ampere;
+    bool nrTemporal=false; // optional motion-reprojected residual stabilization
+    // Which anti-flicker tier the temporal pass runs, for the flat (non-list)
+    // path. Ignored when nrTemporal is false.
+    NrAntiFlicker nrAntiFlicker=NrAntiFlicker::Flow;
+    // Zero keeps the original flat, single-layer API byte-for-byte in use.
+    // Multi-layer lists retain disabled nodes; the flat fields mirror the first
+    // enabled layer (or the first node when every layer is bypassed).
+    std::array<NrLayerSettings,kMaxNrInstances> nrLayers{};
+    uint32_t nrLayerCount=0;
+    bool usesNrTemporal() const {
+        if(!nrLayerCount)return residual.correction.enabled?residual.correction.usesHistory():nrTemporal;
+        for(uint32_t i=0;i<nrLayerCount&&i<nrLayers.size();++i)
+            if(nrLayers[i].enabled&&nrLayers[i].usesTemporal())return true;
+        return false;
+    }
+    NrLayerSettings nrLayer(uint32_t index) const {
+        if(nrLayerCount&&index<nrLayers.size())return nrLayers[index];
+        return {model,residual,nrRuntime,nrTemporal,lowLatency,nr,nrAntiFlicker,nrPolicy};
+    }
+    uint32_t activeNrLayerCount() const {
+        if(!nr)return 0;
+        if(!nrLayerCount)return 1;
+        uint32_t count=0;
+        for(uint32_t i=0;i<nrLayerCount&&i<nrLayers.size();++i)if(nrLayers[i].enabled)++count;
+        return count;
+    }
+    uint32_t activeAutoNrLayerCount() const {
+        if(!nr)return 0;
+        if(!nrLayerCount)return nrPolicy==pipeline::NrSizePolicy::Auto?1:0;
+        uint32_t count=0;
+        for(uint32_t i=0;i<nrLayerCount&&i<nrLayers.size();++i)
+            count+=nrLayers[i].enabled&&nrLayers[i].sizePolicy==pipeline::NrSizePolicy::Auto;
+        return count;
+    }
+    bool sameNrTopology(const EnhancementSettings& other) const {
+        if(nrLayerCount!=other.nrLayerCount)return false;
+        if(nrModelSelection(nrRuntime,model)!=nrModelSelection(other.nrRuntime,other.model))return false;
+        if(residual.correction.enabled!=other.residual.correction.enabled||usesNrTemporal()!=other.usesNrTemporal())return false;
+        for(uint32_t i=0;i<nrLayerCount&&i<nrLayers.size();++i){
+            const auto& a=nrLayers[i]; const auto& b=other.nrLayers[i];
+            if(a.enabled!=b.enabled||a.temporal!=b.temporal||a.usesTemporal()!=b.usesTemporal()||
+               a.residual.correction.enabled!=b.residual.correction.enabled||a.runtime!=b.runtime||
+               a.lowLatencyPairing!=b.lowLatencyPairing||a.sizePolicy!=b.sizePolicy||
+               nrModelSelection(a.runtime,a.model)!=nrModelSelection(b.runtime,b.model))return false;
+        }
+        return true;
+    }
+    // Frame-generation admission strictness.
+    //   false (default): a group is admitted when the whole group can still
+    //     reach its LAST deadline, which is what 1.4.0 did. More generated
+    //     frames; some early outputs in a group may arrive late.
+    //   true: the FIRST generated output must also reach its own deadline,
+    //     which at 6X is one sixth of a source interval. Rejects whole groups
+    //     whose early outputs are already doomed, so the cadence is stricter
+    //     but fewer frames are generated - measured 3.75 generated per source
+    //     frame at 6X against 1.4.0 hitting the full 3.0 of 3 at 4X.
+    // Users reported 1.4.0 feeling better, so the looser rule is the default.
+    bool fgStrictAdmission=false;
+    // 自动选择倍率开关（2026-10-24）：开启时 multiplier 只是占位/上次手动值，
+    // 实际档位在运行期由 displayFgAutoMultiplier(backend, 源帧率, 输出上限) 算出；
+    // 关闭时按 multiplier 走作者原版逻辑。只对 DLSS 和 VFG 开放。
+    bool fgAutoMultiplier=false;
+    bool captureCompatible=false;
+    // Capture audio ingress; requires a reconnect to take effect (the media type
+    // is negotiated when the graph is built).
+    CaptureAudioIngress captureAudio=CaptureAudioIngress::Auto;
+    // Capture video-pin allocator policy; requires a reconnect to take effect
+    // (the allocator is created while the capture graph is built).
+    source::CaptureBufferMode captureBuffer=source::CaptureBufferMode::Auto;
+    // Capture ingest only: flip the incoming frame vertically. Exists because
+    // some devices declare a DIB orientation that does not match their samples
+    // (RGB24 upside-down reports); the capture source asks for top-down first,
+    // this is the manual fallback when a driver still misreports. Applies to
+    // the next sample, so it is a live edit, not a graph rebuild.
+    bool captureFlipVertical=false;
+    bool forceSdrPreview=false; // display only; retain actual HDR source metadata
+    HdrOutputMode hdrOutputMode=HdrOutputMode::Hdr10;
+    MotionSource fgMotion=MotionSource::Automatic;
+    MotionSource srMotion=MotionSource::OpticalFlow;
+    MotionSource nrMotion=MotionSource::OpticalFlow;
+    VideoHdrSettings videoHdr;
+    // Custom: static HDR output tuning (see HdrOutputTuning.h). Both blocks are
+    // live: the curve reaches the present blit and the metadata the display.
+    HdrCurveSettings hdrCurve;
+    HdrMetadataSettings hdrMetadata;
+    // Custom: follow the Dolby Vision RPU level 1 for the highlight start. Live,
+    // and deliberately a separate switch: it only moves where the curve's
+    // roll-off starts per frame, so the user keeps every other dial. Meaningless
+    // while `hdrCurve.enabled` is off, which is why the UI pairs the two.
+    //
+    // Kept off by default on purpose. A static curve is the predictable baseline;
+    // the follow re-derives the highlight start from each frame's L1, and Veyra only
+    // has L1 (no L2 trim passes, no CM v4.0 L8), so it is an approximation of what a
+    // Dolby display would do. Users who want it can turn both switches on; leaving it
+    // on by default would silently re-shade every Dolby Vision film.
+    bool doviFollow=false;
+    // Custom: also let the frame's average brightness move the knee, the way
+    // libplacebo's st2094_pick_knee does. Off keeps the previous peak-only curve.
+    bool doviFollowAverage=false;
+    // Custom (P5): decode and composite the Dolby Vision profile 7 enhancement
+    // layer instead of playing the base layer alone.
+    //
+    // Off by default: turning it on changes the picture, adds a second software
+    // decoder (4-8 ms per frame at 1080p) and only means anything for a source that
+    // reports profile 7 with an enhancement layer present - everything else never
+    // enters the path. Measured on a real UHD remux, 98.5% of frames carry a mapping
+    // this build can evaluate; the rest keep the base layer for that frame instead of
+    // being approximated. (An earlier note here claimed the layer only decodes "a few
+    // percent" of frames and that no frame matched its base frame - both were
+    // measured before the splitter moved to FFmpeg's dovi_split, and neither is true
+    // now.)
+    bool doviP7Compose=false;
+    bool useHdrPreview(bool hdrInput,bool hdrDisplayActive)const{return (hdrInput||videoHdr.enabled)&&hdrDisplayActive&&!forceSdrPreview;}
+    pipeline::SrTarget srTarget=pipeline::SrTarget::Uhd4K;
+    uint32_t videoSrQuality=kDefaultVideoSrQuality; // 0 DLSS SR; 5 FSR; RTX Video SR family/tier values (videoSrFamily)
+    uint32_t dlssSrModel=0;    // DLSS SR only; see kDlssSrModelCount
+    // Base SR uses srTarget; the optional second SR has its own target/quality.
+    // srPrescale now lowers the first AI result only when dualSrEnabled.
+    // srOutput shrinks a single RTX Video SR result (supersampling); double SR
+    // ignores it.
+    pipeline::SrPrescale srPrescale=pipeline::SrPrescale::Off;
+    pipeline::SrOutput srOutput=pipeline::SrOutput::Target;
+    bool dualSrEnabled=false;
+    pipeline::SrTarget dualSrTarget=pipeline::SrTarget::Uhd4K;
+    uint32_t dualSrQuality=kDefaultVideoSrQuality; // any SR value (DLSS SR, RTX Video SR family/tier, FSR), independent of the base
+    // A DLSS SR / FSR pass reads srMotion: the base, or the second of a double SR.
+    bool temporalSr() const { return temporalVideoSr(videoSrQuality)||(dualSrEnabled&&temporalVideoSr(dualSrQuality)); }
+    bool usesDlaa() const {
+        if(antiAlias.enabled&&antiAlias.usesDlaa())return true;
+        for(unsigned i=0;i<additionalAntiAliasCount;++i)
+            if(additionalAntiAlias[i].enabled&&additionalAntiAlias[i].usesDlaa())return true;
+        return false;
+    }
+    uint32_t multiplier=1;
+    FrameGenerationBackend frameGenerationBackend=FrameGenerationBackend::Dlss;
+    // NvVFX Mode: Low=0, Medium=1 (default), High=2; mixed tiers 3-5, see vfgPrimaryMode().
+    uint32_t vfgQuality=1;
+    // Export target bitrate in Mbps; 0 keeps the encoder's constant-quality
+    // default (NVENC CONSTQP / MFT quality mode). Only the export job consumes
+    // it: preview never re-encodes.
+    uint32_t exportBitrateMbps=0;
+    // Lightroom-aligned colour grade. Live: the engine uploads it per frame, so
+    // changing it never rebuilds the graph (see sameVideoConfiguration below).
+    ColorSettings color;
+    // Instance zero remains the legacy field, including for live Win32 edits.
+    // Fixed capacity preserves the export shared-memory POD contract.
+    std::array<ColorSettings,kMaxColorInstances-1> additionalColors{};
+    uint32_t additionalColorCount=0;
+    // Spatial anti-aliasing (#53). Instance zero is the list card; a node chain may
+    // hold a second instance. Fixed capacity for the export shared-memory POD.
+    AntiAliasSettings antiAlias;
+    std::array<AntiAliasSettings,kMaxAntiAliasInstances-1> additionalAntiAlias{};
+    uint32_t additionalAntiAliasCount=0;
+    // Beauty nodes: instance zero is the first list layer, the rest follow in
+    // group order. The detection values are shared by every instance of the chain.
+    BeautySettings beauty;
+    std::array<BeautySettings,kMaxBeautyInstances-1> additionalBeauty{};
+    uint32_t additionalBeautyCount=0;
+    BeautyDetection beautyDetection;
+    bool beautyEnabled() const {
+        if(beauty.enabled)return true;
+        for(uint32_t i=0;i<additionalBeautyCount&&i<additionalBeauty.size();++i)if(additionalBeauty[i].enabled)return true;
+        return false;
+    }
+    // Stage-5 output stabiliser (anti-flicker). Holds the previous output where
+    // the source has not visibly changed. 0 is off, and off is the default: the
+    // graph then skips the dispatch entirely, so a build with this feature
+    // disabled is byte-identical to one without it. `nrHoldTolerance` is a
+    // relative 3x3 box-luma delta; the default is the value the pass was
+    // tuned against (see shaders/NrHold.hlsl).
+    float nrHoldStrength=0.0f;
+    float nrHoldTolerance=0.02f;
+    // Preview only; see NrReuseMode. Off by default.
+    NrReuseMode nrReuse=NrReuseMode::Off;
+    pipeline::NrSizePolicy nrPolicy=pipeline::NrSizePolicy::Realtime;
+    FlowQuality flow=FlowQuality::Balanced;
+    OpticalFlowBackend opticalFlowBackend=OpticalFlowBackend::Nvidia;
+    bool amdFlowHalfResolution=false;
+    // UI "边缘神盾": refined optical-flow motion for frame generation (edge refinement and
+    // the uncovered-background fill): DLSS, FSR and ANR, and XeSS with the optical-flow
+    // source (2026-11-13; VFG estimates its own motion). A global control kept in shell
+    // preferences.
+    bool fgMotionRefine=true;
+    // UI "DLSS 性能模式": NVIDIA's DLSS-G performance mode (ngx/DlssgLite.h),
+    // DLSS frame generation only. A global control kept in shell preferences.
+    bool dlssgLite=false;
+    // UI "VFG 自动调控": live 2X VFG runs a pair with the next faster model when the
+    // chosen one would miss its refresh or the budget (LivePresentationTiming.h).
+    // A global control kept in shell preferences.
+    bool vfgAutoRegulate=false;
+    // UI "自适应倍率" (engine/AdaptiveFgMultiplier.h, from PushFPS): the multiplier is a
+    // ceiling and each source pair uses the one whose output lands closest to the target.
+    // Changes only the per-pair multiplier, never the graph, so the configuration
+    // comparisons below leave it out. A global control kept in shell preferences.
+    bool fgAdaptive=false;
+    // UI "帧节奏修复" (engine/FramePacingRepair.h, from PushFPS): even times for a locked
+    // game whose frames arrive unevenly (17/50 ms). Re-times frames on the engine thread only.
+    bool pacingRepair=false;
+    // UI "HUD 自动锁定" (pipeline/HudLock.h, from PushFPS): a per-pixel HUD mask found every
+    // frame and kept out of graph frame generation. Its passes exist only when on.
+    bool hudLock=false;
+    ContentRate content=ContentRate::Transport;
+    AudioSyncMode audioSync=AudioSyncMode::Automatic;
+    int32_t audioOffsetMs=0;
+    bool operator==(const EnhancementSettings&) const = default;
+    // Comparison only: persistent settings keep every bypassed node's values.
+    // GPU history belongs to the running effects, not to these saved drafts.
+    EnhancementSettings activeVideoSettings() const {
+        auto active=*this;
+        const EnhancementSettings defaults;
+        if(!nr){
+            active.model=defaults.model;active.residual=defaults.residual;
+            active.nrRuntime=defaults.nrRuntime;active.nrTemporal=defaults.nrTemporal;
+            active.nrAntiFlicker=defaults.nrAntiFlicker;active.nrPolicy=defaults.nrPolicy;
+            active.nrMotion=defaults.nrMotion;active.nrLayers=defaults.nrLayers;
+        }else{
+            active.nrRuntime=currentNrRuntime(active.nrRuntime);
+            if(!nrUsesPerformanceModel(active.nrRuntime))active.model.performance=defaults.model.performance;
+            if(!active.residual.correction.enabled)active.residual.correction={};
+            if(!active.nrTemporal)active.nrAntiFlicker=defaults.nrAntiFlicker;
+            for(size_t i=0;i<active.nrLayers.size();++i){
+                auto& layer=active.nrLayers[i];
+                if(i>=nrLayerCount||!layer.enabled){layer={};continue;}
+                layer.runtime=currentNrRuntime(layer.runtime);
+                if(!nrUsesPerformanceModel(layer.runtime))layer.model.performance=defaults.model.performance;
+                if(!layer.residual.correction.enabled)layer.residual.correction={};
+                if(!layer.temporal)layer.antiFlicker=NrAntiFlicker::Flow;
+            }
+        }
+        if(!nr||!sr)active.lowLatency=defaults.lowLatency;
+        if(!nr||!protection.enabled)active.protection=defaults.protection;
+        if(!exclusion.enabled)active.exclusion=defaults.exclusion;
+        if(!sr){active.srTarget=defaults.srTarget;active.videoSrQuality=defaults.videoSrQuality;active.srMotion=defaults.srMotion;}
+        // The DLSS SR model serves every DLSS SR pass, the second of a double SR too.
+        if(!usesDlaa()&&(!sr||(videoSrQuality!=0&&!(dualSrEnabled&&dualSrQuality==0))))active.dlssSrModel=defaults.dlssSrModel;
+        if(!sr||!dualSrEnabled){
+            active.srPrescale=defaults.srPrescale;
+            active.dualSrEnabled=false;active.dualSrTarget=defaults.dualSrTarget;active.dualSrQuality=defaults.dualSrQuality;
+        }
+        // The supersample shrink belongs to a single RTX Video SR pass.
+        if(!sr||!rtxVideoSr(videoSrQuality)||dualSrEnabled)active.srOutput=defaults.srOutput;
+        if(multiplier<=1){
+            active.frameGenerationBackend=defaults.frameGenerationBackend;active.vfgQuality=defaults.vfgQuality;
+            active.fgMotion=defaults.fgMotion;active.fgStrictAdmission=defaults.fgStrictAdmission;
+        }else if(frameGenerationBackend!=FrameGenerationBackend::Vfg)active.vfgQuality=defaults.vfgQuality;
+        if(!color.enabled)active.color=defaults.color;
+        for(size_t i=0;i<active.additionalColors.size();++i)
+            if(i>=additionalColorCount||!additionalColors[i].enabled)active.additionalColors[i]={};
+        if(!videoHdr.enabled)active.videoHdr=defaults.videoHdr;
+        active.antiAlias=antiAlias.active();
+        for(size_t i=0;i<active.additionalAntiAlias.size();++i)
+            active.additionalAntiAlias[i]=i<additionalAntiAliasCount?additionalAntiAlias[i].active():AntiAliasSettings{};
+        active.beauty=beauty.active();
+        for(size_t i=0;i<active.additionalBeauty.size();++i)
+            active.additionalBeauty[i]=i<additionalBeautyCount?additionalBeauty[i].active():BeautySettings{};
+        if(!beautyEnabled())active.beautyDetection=defaults.beautyDetection;
+        if(nrHoldStrength==0)active.nrHoldTolerance=defaults.nrHoldTolerance;
+        if(!nr)active.nrReuse=defaults.nrReuse;
+        if(!hdrCurve.enabled){
+            active.hdrCurve=defaults.hdrCurve;
+        }
+        // HDR10 static metadata is gone: the card and the send path were removed
+        // because it never changed a pixel and its swapchain call recomposites the
+        // screen. A session saved while it existed must not resurrect it.
+        active.hdrMetadata=defaults.hdrMetadata;
+        // Flow is shared. Turning off one effect does not make it inactive
+        // while another consumer still needs it (VFG has its own flow).
+        const bool flowUsed=usesDlaa()||(nr&&(motionUsesFlow(nrMotion)||usesNrTemporal()))||
+            (sr&&temporalSr()&&motionUsesFlow(srMotion))||
+            (multiplier>1&&motionUsesFlow(fgMotion,frameGenerationBackend));
+        if(!flowUsed){active.flow=defaults.flow;active.opticalFlowBackend=defaults.opticalFlowBackend;active.amdFlowHalfResolution=defaults.amdFlowHalfResolution;}
+        // Every frame generation that takes its motion from optical flow reads the refined
+        // vectors (DLSS, FSR, ANR; XeSS only with the optical-flow source; never VFG).
+        if(!(multiplier>1&&motionUsesFlow(fgMotion,frameGenerationBackend)))
+            active.fgMotionRefine=defaults.fgMotionRefine;
+        if(!(multiplier>1&&frameGenerationBackend==FrameGenerationBackend::Dlss))active.dlssgLite=defaults.dlssgLite;
+        if(!(multiplier>1&&frameGenerationBackend==FrameGenerationBackend::Vfg))active.vfgAutoRegulate=defaults.vfgAutoRegulate;
+        if(!(multiplier>2))active.fgAdaptive=defaults.fgAdaptive;
+        if(!(multiplier>1))active.pacingRepair=defaults.pacingRepair;
+        // XeSS generates inside its own presenter; HUD Lock works on graph frame generation.
+        if(!(multiplier>1&&frameGenerationBackend!=FrameGenerationBackend::XeSS))active.hudLock=defaults.hudLock;
+        return active;
+    }
+    bool sameActiveVideoParameters(const EnhancementSettings& other) const {
+        auto active=activeVideoSettings();const auto target=other.activeVideoSettings();
+        active.revision=target.revision;active.audioSync=target.audioSync;active.audioOffsetMs=target.audioOffsetMs;
+        active.captureFlipVertical=target.captureFlipVertical;active.exportBitrateMbps=target.exportBitrateMbps;
+        // Read by the engine loop each pair; no graph update or NR history reset.
+        active.fgAdaptive=target.fgAdaptive;active.pacingRepair=target.pacingRepair;
+        return active==target;
+    }
+    bool sameVideoConfiguration(const EnhancementSettings& other) const {
+        auto video=activeVideoSettings();const auto target=other.activeVideoSettings();
+        video.revision=target.revision;
+        video.audioSync=target.audioSync;
+        video.audioOffsetMs=target.audioOffsetMs;
+        // Capture flip is applied per sample on the source's callback thread;
+        // toggling it must not rebuild the graph.
+        video.captureFlipVertical=target.captureFlipVertical;
+        // Export-only fields: changing the bitrate must never invalidate the
+        // running preview graph (the controller would otherwise rebuild it).
+        video.exportBitrateMbps=target.exportBitrateMbps;
+        // Adaptive multiplier and pacing repair: chosen per pair inside the running graph.
+        video.fgAdaptive=target.fgAdaptive;
+        video.pacingRepair=target.pacingRepair;
+        // Colour grade: parameters are uniform-only (never a rebuild), but the
+        // master switch changes the graph shape, so it stays in the comparison.
+        const auto oldColor=video.color;const auto oldAdditional=video.additionalColors;
+        video.color=target.color;
+        video.color.enabled=oldColor.enabled;
+        video.color.lutName=oldColor.lutName;
+        video.color.lutInputSpace=oldColor.lutInputSpace;
+        video.additionalColors=target.additionalColors;
+        for(size_t i=0;i<additionalColors.size();++i){
+            video.additionalColors[i].enabled=oldAdditional[i].enabled;
+            video.additionalColors[i].lutName=oldAdditional[i].lutName;
+            video.additionalColors[i].lutInputSpace=oldAdditional[i].lutInputSpace;
+        }
+        video.videoHdr=target.videoHdr;
+        video.videoHdr.enabled=videoHdr.enabled;
+        // Anti-aliasing thresholds and history weights are uniforms; the method,
+        // tier and temporal mode decide which passes exist.
+        if(video.antiAlias.sameStructure(target.antiAlias))video.antiAlias=target.antiAlias;
+        for(size_t i=0;i<additionalAntiAlias.size();++i)
+            if(video.additionalAntiAlias[i].sameStructure(target.additionalAntiAlias[i]))video.additionalAntiAlias[i]=target.additionalAntiAlias[i];
+        // Beauty: only a node's master switch (and the node count) shapes the graph.
+        if(video.beauty.sameStructure(target.beauty))video.beauty=target.beauty;
+        for(size_t i=0;i<additionalBeauty.size();++i)
+            if(video.additionalBeauty[i].sameStructure(target.additionalBeauty[i]))video.additionalBeauty[i]=target.additionalBeauty[i];
+        video.beautyDetection=target.beautyDetection;
+        return video==target;
+    }
+    void rejectVideoRequest(const EnhancementSettings& attempted,const EnhancementSettings& previous) {
+        if(revision!=attempted.revision)return;
+        auto restored=previous;
+        if(audioSync!=attempted.audioSync||audioOffsetMs!=attempted.audioOffsetMs){
+            restored.audioSync=audioSync;restored.audioOffsetMs=audioOffsetMs;
+        }
+        *this=restored;
+    }
+    std::string validate() const {
+        if(hdrOutputMode<HdrOutputMode::Hdr10||hdrOutputMode>HdrOutputMode::ScRgb)return "invalid HDR output mode";
+        for(auto source:{fgMotion,srMotion,nrMotion})if(source<MotionSource::Zero||source>MotionSource::Automatic)return "invalid motion source";
+        if(!videoHdr.valid())return "invalid RTX Video HDR parameters";
+        if(!hdrCurve.valid())return "invalid HDR curve parameters";
+        if(!hdrMetadata.valid())return "invalid HDR metadata parameters";
+        auto range=[](float v,float hi){return std::isfinite(v)&&v>=0&&v<=hi;};
+        if(auto error=protection.validate();!error.empty())return error;
+        if(auto error=exclusion.validate();!error.empty())return error;
+        if(!revision)return "settingsRevision must be nonzero";
+        if(!validNrRuntime(nrRuntime))return "invalid NR runtime";
+        if(captureAudio<CaptureAudioIngress::Auto||captureAudio>CaptureAudioIngress::BitstreamPreferred)return "invalid capture audio ingress mode";
+        if(captureBuffer<source::CaptureBufferMode::Auto||captureBuffer>source::CaptureBufferMode::DriverDefault)return "invalid capture buffer mode";
+        if(audioSync<AudioSyncMode::Automatic||audioSync>AudioSyncMode::Off||audioOffsetMs<-250||audioOffsetMs>250)return "invalid audio sync setting";
+        // Stage-5 output stabiliser: 0 is off, 1 is full hold; the tolerance is
+        // a relative box-luma delta, so anything above 1 would hold every pixel.
+        if(!range(nrHoldStrength,1))return "output stabiliser strength out of range";
+        if(!range(nrHoldTolerance,1))return "output stabiliser tolerance out of range";
+        if(!validNrReuseMode(nrReuse))return "invalid NR inference reuse mode";
+        if(!range(model.intensity,1)||!range(model.tone,1)||!range(model.structure,1))return "model parameter out of range";
+        if(model.skin!=-1&&!range(model.skin,2))return "skin parameter out of range";
+        if(model.style<0||model.style>2||model.autoMask<0||model.autoMask>1||model.uiCorrection<0||model.uiCorrection>1)return "invalid experimental parameter";
+        if(!range(residual.total,5)||!residual.correction.valid())return "NR residual/correction parameter out of range";
+        for(float v:{residual.darken,residual.brighten,residual.color,residual.luminance})if(!range(v,2))return "residual parameter out of range";
+        if(nrLayerCount>nrLayers.size())return "too many NR instances";
+        for(uint32_t i=0;i<nrLayerCount;++i){
+            const auto& n=nrLayers[i];
+            if(!pipeline::validNrSizePolicy(n.sizePolicy))return "invalid NR layer size policy";
+            if(!range(n.model.intensity,1)||!range(n.model.tone,1)||!range(n.model.structure,1)||
+               (n.model.skin!=-1&&!range(n.model.skin,2)))return "NR layer model parameter out of range";
+            if(n.model.style<0||n.model.style>2||n.model.autoMask<0||n.model.autoMask>1||
+               n.model.uiCorrection<0||n.model.uiCorrection>1)return "invalid NR layer experimental parameter";
+            if(!range(n.residual.total,5)||!n.residual.correction.valid())return "NR layer residual/correction parameter out of range";
+            for(float v:{n.residual.darken,n.residual.brighten,n.residual.color,n.residual.luminance})
+                if(!range(v,2))return "NR layer residual parameter out of range";
+            if(!validNrRuntime(n.runtime))
+                return "invalid NR layer runtime";
+            if(n.enabled&&(n.runtime!=nrRuntime||n.lowLatencyPairing!=lowLatency))
+                return "active NR layers must share runtime and NR/SR order";
+        }
+        if(nr&&nrLayerCount&&!activeNrLayerCount())return "enabled NR stack has no active layer";
+        if(frameGenerationBackend<FrameGenerationBackend::Dlss||frameGenerationBackend>FrameGenerationBackend::AmdFrc)return "invalid frame generation backend";
+        if(vfgQuality>=kVfgQualityCount)return "invalid VFG quality";
+        // The XeSS provider reports its own generated-frame ceiling at session
+        // start; the engine clamps/rejects above it, so validation only guards
+        // the absolute API range here.
+        if(frameGenerationBackend==FrameGenerationBackend::XeSS&&multiplier>4)return "XeSS frame generation supports up to 4X";
+        // The AMD 3.1.x provider delivers one generated frame per present; the
+        // probe measured the same count for 2/3/4 requested frames.
+        if(fsrFrameGeneration(frameGenerationBackend)&&multiplier>2)return "AMD FSR frame generation supports up to 2X";
+        if(frameGenerationBackend==FrameGenerationBackend::AmdFrc&&multiplier>2)return "AMD FRC supports 2X only";
+        if(!validVideoSrQuality(videoSrQuality))return "invalid video SR quality";
+        if(dlssSrModel>=kDlssSrModelCount)return "invalid DLSS SR model";
+        if(!pipeline::validSrTarget(srTarget))return "invalid SR target";
+        if(!pipeline::validSrPrescale(srPrescale))return "invalid SR prescale";
+        if(!pipeline::validSrOutput(srOutput))return "invalid SR output";
+        if(!pipeline::validSrTarget(dualSrTarget)||!validVideoSrQuality(dualSrQuality))return "invalid second SR target or quality";
+        if(opticalFlowBackend!=OpticalFlowBackend::Nvidia&&opticalFlowBackend!=OpticalFlowBackend::AmdFidelityFx&&opticalFlowBackend!=OpticalFlowBackend::GpuDis)return "invalid optical flow backend";
+        if(multiplier<1||multiplier>(frameGenerationBackend==FrameGenerationBackend::Vfg?8u:6u))return "unsupported multiplier";
+        // 0 = auto quality; explicit values are capped at 300 Mbps so a typo
+        // cannot ask a driver for a nonsense rate.
+        if(exportBitrateMbps>300)return "export bitrate out of range";
+        if(auto error=color.validate();!error.empty())return error;
+        if(additionalColorCount>additionalColors.size())return "too many color instances";
+        for(uint32_t i=0;i<additionalColorCount;++i)
+            if(auto error=additionalColors[i].validate();!error.empty())return error;
+        if(auto error=antiAlias.validate();!error.empty())return error;
+        if(additionalAntiAliasCount>additionalAntiAlias.size())return "too many anti-aliasing instances";
+        for(uint32_t i=0;i<additionalAntiAliasCount;++i)
+            if(auto error=additionalAntiAlias[i].validate();!error.empty())return error;
+        if(auto error=beauty.validate();!error.empty())return error;
+        if(additionalBeautyCount>additionalBeauty.size())return "too many beauty instances";
+        for(uint32_t i=0;i<additionalBeautyCount;++i)
+            if(auto error=additionalBeauty[i].validate();!error.empty())return error;
+        if(auto error=beautyDetection.validate();!error.empty())return error;
+        if(!pipeline::validNrSizePolicy(nrPolicy))return "invalid NR size policy";
+        if(flow<FlowQuality::Performance||flow>FlowQuality::Quality||content<ContentRate::Transport||content>ContentRate::Capture60To30)return "invalid flow/content mode";
+        return {};
+    }
+};
+}
