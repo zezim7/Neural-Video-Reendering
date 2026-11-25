@@ -94,6 +94,7 @@ public partial class Editor : Window
         RemoveButton.IsEnabled = !busy && clip is not null;
         ClearButton.IsEnabled = !busy && clips.Count > 0;
         AddLayerButton.IsEnabled = !busy && layers.Count < LayerLimit;
+        EngineButton.Visibility = EnginePath is null ? Visibility.Visible : Visibility.Collapsed;
         EngineLabel.Text = EnginePath is null ? $"Motor de NR · pacote {Vendor} não localizado" : $"Motor de NR · {Vendor}";
         LayerSummary.Text = ActiveCount == 1 ? "1 camada ativa" : $"{ActiveCount} camadas em sequência";
         PlayButton.IsEnabled = ready;
