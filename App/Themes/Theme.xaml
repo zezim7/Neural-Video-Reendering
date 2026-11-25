@@ -123,6 +123,7 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderControl}"/>
         <Setter Property="Padding" Value="11,6"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -134,6 +135,9 @@
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Outline" Property="Background" Value="{StaticResource ControlHover}"/>
                             <Setter TargetName="Outline" Property="BorderBrush" Value="{StaticResource BorderStrong}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Outline" Property="Background" Value="{StaticResource SurfaceBg}"/>
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Outline" Property="BorderBrush" Value="{StaticResource Accent}"/>
@@ -163,6 +167,9 @@
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Outline" Property="Background" Value="{StaticResource PrimaryHover}"/>
                             <Setter TargetName="Outline" Property="BorderBrush" Value="{StaticResource PrimaryHover}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Outline" Property="Opacity" Value="0.88"/>
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Outline" Property="BorderBrush" Value="{StaticResource Accent}"/>
@@ -309,10 +316,12 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="11.5"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
-                    <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="3" Padding="11,4">
+                    <Border x:Name="Pill" Background="{TemplateBinding Background}" BorderBrush="Transparent"
+                            BorderThickness="1" CornerRadius="3" Padding="10,3">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -322,6 +331,9 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Pill" Property="Background" Value="{StaticResource SurfaceHover}"/>
                             <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Pill" Property="BorderBrush" Value="{StaticResource Accent}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Pill" Property="Opacity" Value="0.4"/>
@@ -364,6 +376,7 @@
         <Setter Property="Padding" Value="10,6,26,6"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
@@ -407,6 +420,9 @@
                         </Popup>
                     </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                        </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4"/>
                         </Trigger>
@@ -421,6 +437,7 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="IsMoveToPointEnabled" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
@@ -449,7 +466,7 @@
                                 </RepeatButton>
                             </Track.IncreaseRepeatButton>
                             <Track.Thumb>
-                                <Thumb Width="11" Height="11">
+                                <Thumb x:Name="SliderThumb" Width="11" Height="11">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Ellipse x:Name="Dot" Fill="#ECECEC" Stroke="{StaticResource Accent}" StrokeThickness="1.8"/>
@@ -458,6 +475,11 @@
                                                     <Setter TargetName="Dot" Property="Fill" Value="#FFFFFF"/>
                                                     <Setter TargetName="Dot" Property="Stroke" Value="{StaticResource AccentHover}"/>
                                                 </Trigger>
+                                                <DataTrigger Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource AncestorType=Slider}}" Value="True">
+                                                    <Setter TargetName="Dot" Property="Fill" Value="#FFFFFF"/>
+                                                    <Setter TargetName="Dot" Property="Stroke" Value="{StaticResource AccentHover}"/>
+                                                    <Setter TargetName="Dot" Property="StrokeThickness" Value="2.4"/>
+                                                </DataTrigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Thumb.Template>
@@ -552,6 +574,7 @@
     <!-- Fluent Toggle Switch -->
     <Style x:Key="Switch" TargetType="CheckBox">
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
@@ -580,9 +603,11 @@
 
     <!-- ListBoxItem -->
     <Style TargetType="ListBoxItem">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="Padding" Value="6,6"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
@@ -602,6 +627,9 @@
                             <Setter TargetName="Tile" Property="Background" Value="{StaticResource ControlHover}"/>
                             <Setter TargetName="Tile" Property="BorderBrush" Value="{StaticResource BorderControl}"/>
                             <Setter TargetName="AccentBar" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Tile" Property="BorderBrush" Value="{StaticResource Accent}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -637,7 +665,7 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderControl}"/>
         <Setter Property="CaretBrush" Value="{StaticResource Accent}"/>
         <Setter Property="SelectionBrush" Value="{StaticResource AccentSubtle}"/>
-        <Setter Property="Width" Value="96"/>
+        <Setter Property="Width" Value="108"/>
         <Setter Property="Padding" Value="5,4"/>
         <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
         <Setter Property="FontSize" Value="11.5"/>

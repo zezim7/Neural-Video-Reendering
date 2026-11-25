@@ -74,7 +74,8 @@ public partial class Editor
     {
         if (!ready || busy || clip is null) return;
         Pause();
-        Seek(position + deltaFrames * FrameStepSeconds);
+        var stepSeconds = clip.FrameRate is { } fps && fps > 0 ? 1.0 / fps : FrameStepSeconds;
+        Seek(position + deltaFrames * stepSeconds);
     }
 
     private void ToggleMute()

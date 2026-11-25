@@ -68,6 +68,7 @@ internal sealed class ClipItem(string path) : INotifyPropertyChanged
             videoWidth = value;
             Notify(nameof(VideoWidth));
             Notify(nameof(ResolutionBadge));
+            Notify(nameof(MetadataBadge));
             Notify(nameof(Subtitle));
         }
     }
@@ -82,7 +83,25 @@ internal sealed class ClipItem(string path) : INotifyPropertyChanged
             videoHeight = value;
             Notify(nameof(VideoHeight));
             Notify(nameof(ResolutionBadge));
+            Notify(nameof(MetadataBadge));
             Notify(nameof(Subtitle));
+        }
+    }
+
+    private double? frameRate;
+    public double? FrameRate
+    {
+        get => frameRate;
+        set
+        {
+            var normalized = value is { } fps && double.IsFinite(fps) && fps > 0 ? fps : (double?)null;
+            if (frameRate.HasValue == normalized.HasValue
+                && (!normalized.HasValue || Math.Abs(frameRate!.Value - normalized.Value) < 1e-6))
+                return;
+            frameRate = normalized;
+            Notify(nameof(FrameRate));
+            Notify(nameof(FrameRateBadge));
+            Notify(nameof(MetadataBadge));
         }
     }
 
@@ -95,6 +114,32 @@ internal sealed class ClipItem(string path) : INotifyPropertyChanged
         >= 720 => "720p",
         _ => $"{VideoHeight}p"
     };
+
+    public string FrameRateBadge
+    {
+        get
+        {
+            if (frameRate is not { } fps)
+                return "";
+            return Math.Abs(fps - Math.Round(fps)) < 0.01
+                ? FormattableString.Invariant($"{Math.Round(fps):0} fps")
+                : FormattableString.Invariant($"{fps:0.##} fps");
+        }
+    }
+
+    public string MetadataBadge
+    {
+        get
+        {
+            var resolution = VideoWidth > 0 && VideoHeight > 0
+                ? FormattableString.Invariant($"{VideoWidth}×{VideoHeight}")
+                : ResolutionBadge;
+            var fps = FrameRateBadge;
+            if (resolution.Length == 0) return fps;
+            if (fps.Length == 0) return resolution;
+            return $"{resolution} · {fps}";
+        }
+    }
 
     public string Subtitle
     {

@@ -9,7 +9,9 @@
         FontFamily="{StaticResource UiFont}"
         FontSize="12.5"
         Icon="Assets/VideoNR.ico"
-        PreviewKeyDown="PreviewKeyDownHandler">
+        PreviewKeyDown="PreviewKeyDownHandler"
+        PreviewKeyUp="PreviewKeyUpHandler"
+        Deactivated="WindowDeactivated">
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="42"
                       ResizeBorderThickness="6"
@@ -39,11 +41,14 @@
                             BorderThickness="1" CornerRadius="4" Padding="2" WindowChrome.IsHitTestVisibleInChrome="True">
                         <StackPanel Orientation="Horizontal">
                             <RadioButton x:Name="CompareRadio" Content="Comparar" GroupName="ViewMode"
-                                         Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"/>
+                                         Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
+                                         ToolTip="Comparar antes e depois (←/→ ajusta divisória)"/>
                             <RadioButton x:Name="EnhancedRadio" Content="NR (DLSS 5)" GroupName="ViewMode"
-                                         Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"/>
+                                         Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
+                                         ToolTip="Mostrar resultado DLSS 5 / NR"/>
                             <RadioButton x:Name="OriginalRadio" Content="Original" GroupName="ViewMode"
-                                         Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"/>
+                                         Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
+                                         ToolTip="Mostrar imagem original"/>
                         </StackPanel>
                     </Border>
 
@@ -51,9 +56,11 @@
                             BorderThickness="1" CornerRadius="4" Padding="2" Margin="8,0,0,0" WindowChrome.IsHitTestVisibleInChrome="True">
                         <StackPanel Orientation="Horizontal">
                             <RadioButton x:Name="FitZoomRadio" Content="Ajustar" GroupName="ZoomMode" IsChecked="True"
-                                         Style="{StaticResource SegmentedOption}" Checked="ZoomModeChanged"/>
+                                         Style="{StaticResource SegmentedOption}" Checked="ZoomModeChanged"
+                                         ToolTip="Ajustar imagem à janela (1)"/>
                             <RadioButton x:Name="ActualZoomRadio" Content="100%" GroupName="ZoomMode"
-                                         Style="{StaticResource SegmentedOption}" Checked="ZoomModeChanged" ToolTip="Inspeção pixel a pixel (1:1)"/>
+                                         Style="{StaticResource SegmentedOption}" Checked="ZoomModeChanged"
+                                         ToolTip="Inspeção pixel a pixel 1:1 (2)"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -72,10 +79,10 @@
         <Border Grid.Row="1" Background="{StaticResource ViewportBg}" Margin="10" CornerRadius="4"
                 BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" ClipToBounds="True">
             <ScrollViewer x:Name="StageScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
-                          Background="Transparent" SizeChanged="StageSizeChanged">
+                          Background="Transparent" SizeChanged="StageSizeChanged" PreviewMouseWheel="StagePreviewMouseWheel">
                 <Grid x:Name="StageHost" Background="Transparent"
-                      MouseLeftButtonDown="StageMouseDown" MouseMove="StageMouseMove"
-                      MouseLeftButtonUp="StageMouseUp" LostMouseCapture="StageLostCapture">
+                      MouseDown="StageMouseDown" MouseMove="StageMouseMove"
+                      MouseUp="StageMouseUp" LostMouseCapture="StageLostCapture">
                     <Grid x:Name="ViewportGrid" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
                         <Image x:Name="EnhancedImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"/>
                         <Image x:Name="OriginalImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality">
@@ -112,20 +119,20 @@
         <Border Grid.Row="2" Background="{StaticResource ChromeBg}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="14,0">
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Click="CopyClick" Margin="0,0,8,0" Padding="12,6">
+                    <Button Click="CopyClick" Margin="0,0,8,0" Padding="12,6" ToolTip="Copiar imagem para a área de transferência (Ctrl+C)">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8C8;" FontSize="12" Margin="0,0,6,0"/>
                             <TextBlock Text="Copiar"/>
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource PrimaryButton}" Click="SavePngClick" Margin="0,0,8,0" Padding="13,6">
+                    <Button Style="{StaticResource PrimaryButton}" Click="SavePngClick" Margin="0,0,8,0" Padding="13,6" ToolTip="Salvar imagem sem perdas em PNG (Ctrl+S)">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE74E;" FontSize="12" Margin="0,0,6,0"/>
                             <TextBlock Text="Salvar PNG"/>
                         </StackPanel>
                     </Button>
-                    <Button Content="Salvar JPG" Click="SaveJpgClick" Margin="0,0,8,0" Padding="12,6"/>
-                    <Button Content="Fechar" Click="CloseClick" Padding="12,6"/>
+                    <Button Content="Salvar JPG" Click="SaveJpgClick" Margin="0,0,8,0" Padding="12,6" ToolTip="Salvar imagem em JPEG"/>
+                    <Button Content="Fechar" Click="CloseClick" Padding="12,6" ToolTip="Fechar janela (Esc)"/>
                 </StackPanel>
 
                 <TextBlock x:Name="PreviewStatus" Text="Arraste a linha âmbar para comparar antes e depois."

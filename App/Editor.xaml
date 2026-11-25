@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Video NR"
-        Width="1340" Height="820" MinWidth="920" MinHeight="600"
+        Width="1340" Height="820" MinWidth="1024" MinHeight="600"
         WindowState="Maximized"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBg}"
@@ -144,7 +144,7 @@
                                     <TextBlock Text="Remover" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
-                            <Button x:Name="ClearButton" Grid.Column="1" Content="Limpar" Click="ClearQueue" Padding="10,5" FontSize="11.5"/>
+                            <Button x:Name="ClearButton" Grid.Column="1" Content="Limpar" Click="ClearQueue" Padding="10,5" FontSize="11.5" ToolTip="Limpar toda a fila"/>
                         </Grid>
                     </Border>
 
@@ -155,7 +155,8 @@
                             <TextBlock Text="Solte vídeos ou pastas aqui" HorizontalAlignment="Center" Style="{StaticResource MutedText}" FontSize="11" Margin="0,2,0,0" TextAlignment="Center"/>
                         </StackPanel>
 
-                        <ListBox x:Name="Queue" Background="Transparent" BorderThickness="0" SelectionChanged="SelectClip" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox x:Name="Queue" Background="Transparent" BorderThickness="0" SelectionChanged="SelectClip"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Fila de vídeos">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel>
@@ -183,7 +184,19 @@
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" FontWeight="SemiBold" FontSize="12"/>
-                                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SecondaryText}" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SecondaryText}" FontSize="11" Margin="0,1.5,0,0" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding MetadataBadge}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextMuted}"
+                                                       FontSize="10" Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding MetadataBadge}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </StackPanel>
                                     </DockPanel>
                                 </DataTemplate>
@@ -292,9 +305,11 @@
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button x:Name="MarkStartButton" Content="[" FontFamily="{StaticResource MonoFont}" Click="MarkStartClick" Padding="8,5" FontSize="12" Margin="0,0,5,0" ToolTip="Marcar início no ponto atual (I)"/>
                                 <TextBox x:Name="StartTime" Tag="start" Style="{StaticResource TimecodeBox}" AutomationProperties.Name="Início do corte"
+                                         ToolTip="Início do corte (HH:MM:SS.mmm · Enter para aplicar)"
                                          LostKeyboardFocus="TimecodeLostFocus" KeyDown="TimecodeKeyDown"/>
                                 <TextBlock Text="–" VerticalAlignment="Center" Style="{StaticResource MutedText}" Margin="5,0"/>
                                 <TextBox x:Name="EndTime" Tag="end" Style="{StaticResource TimecodeBox}" AutomationProperties.Name="Fim do corte"
+                                         ToolTip="Fim do corte (HH:MM:SS.mmm · Enter para aplicar)"
                                          LostKeyboardFocus="TimecodeLostFocus" KeyDown="TimecodeKeyDown"/>
                                 <Button x:Name="MarkEndButton" Content="]" FontFamily="{StaticResource MonoFont}" Click="MarkEndClick" Padding="8,5" FontSize="12" Margin="5,0,5,0" ToolTip="Marcar fim no ponto atual (O)"/>
                                 <Button x:Name="ResetTrimButton" Style="{StaticResource IconButton}" Click="ResetTrim" Padding="8,5" ToolTip="Voltar para o vídeo inteiro">
@@ -422,7 +437,8 @@
                                             <StackPanel Margin="2,9,2,2" Visibility="{Binding Expanded, Converter={StaticResource BoolToVisibility}}">
                                                 <Border Height="1" Background="{StaticResource BorderSubtle}" Margin="0,0,0,9"/>
                                                 <TextBlock Text="RESOLUÇÃO INTERNA" Style="{StaticResource SectionLabel}" Margin="0,0,0,5"/>
-                                                <ComboBox ItemsSource="{Binding AvailableResolutions}" SelectedIndex="{Binding ResolutionIndex, Mode=TwoWay}"/>
+                                                <ComboBox ItemsSource="{Binding AvailableResolutions}" SelectedIndex="{Binding ResolutionIndex, Mode=TwoWay}"
+                                                          AutomationProperties.Name="Resolução interna da camada"/>
 
                                                 <StackPanel Margin="0,10,0,0">
                                                     <DockPanel Margin="0,0,0,2">

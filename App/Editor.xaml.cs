@@ -212,11 +212,13 @@ public partial class Editor : Window
             return;
         }
 
-        var parts = new List<string>(3) { clip.Name };
+        var parts = new List<string>(4) { clip.Name };
         var w = clip.VideoWidth > 0 ? clip.VideoWidth : Player.NaturalVideoWidth;
         var h = clip.VideoHeight > 0 ? clip.VideoHeight : Player.NaturalVideoHeight;
         if (w > 0 && h > 0)
             parts.Add($"{w}×{h}");
+        if (!string.IsNullOrEmpty(clip.FrameRateBadge))
+            parts.Add(clip.FrameRateBadge);
         if (clip.Duration > 0)
             parts.Add(TrimSelection.Format(clip.Duration));
         HeaderClipInfo.Text = string.Join(" · ", parts);
@@ -300,6 +302,7 @@ public partial class Editor : Window
             item.Thumbnail = info.Bitmap;
             item.VideoWidth = info.Width;
             item.VideoHeight = info.Height;
+            item.FrameRate = info.FrameRate;
             if (ReferenceEquals(item, clip))
                 UpdateHeaderClipInfo();
         }

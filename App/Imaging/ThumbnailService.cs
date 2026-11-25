@@ -5,7 +5,7 @@ using VideoNR.Services;
 
 namespace VideoNR.Imaging;
 
-internal sealed record VideoThumbnailInfo(BitmapSource Bitmap, int Width, int Height);
+internal sealed record VideoThumbnailInfo(BitmapSource Bitmap, int Width, int Height, double? FrameRate);
 
 internal static class ThumbnailService
 {
@@ -33,9 +33,10 @@ internal static class ThumbnailService
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                var frameRate = MediaFoundationFrameCodec.TryGetFrameRate(videoPath);
                 var (scaled, _) = decoded.DownscaleIfExceeds(128, 72);
                 var bitmap = WpfImageBridge.ToBitmapSource(scaled);
-                return new VideoThumbnailInfo(bitmap, decoded.Width, decoded.Height);
+                return new VideoThumbnailInfo(bitmap, decoded.Width, decoded.Height, frameRate);
             }, cancellationToken);
         }
         catch (OperationCanceledException)

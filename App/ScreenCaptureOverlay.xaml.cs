@@ -66,6 +66,7 @@ public partial class ScreenCaptureOverlay : Window
         anchorDip = e.GetPosition(CaptureSurface);
         currentSelectionDip = new Rect(anchorDip, new Size(0, 0));
         dragging = CaptureSurface.CaptureMouse();
+        if (dragging) ToolbarBorder.Visibility = Visibility.Collapsed;
         UpdateScrimAndSelection();
         e.Handled = true;
     }
@@ -90,6 +91,7 @@ public partial class ScreenCaptureOverlay : Window
         if (currentSelectionDip.Width < 6 || currentSelectionDip.Height < 6)
         {
             currentSelectionDip = Rect.Empty;
+            ToolbarBorder.Visibility = Visibility.Visible;
             UpdateScrimAndSelection();
             return;
         }
@@ -106,6 +108,7 @@ public partial class ScreenCaptureOverlay : Window
     private void SurfaceLostCapture(object sender, MouseEventArgs e)
     {
         dragging = false;
+        ToolbarBorder.Visibility = Visibility.Visible;
     }
 
     private Point ClampToSurface(Point p)

@@ -100,6 +100,21 @@ AssertNear(1.0, layer.Structure, "NrLayer ResetDefaults structure");
 var clipItem = new ClipItem("/videos/demo.mp4");
 AssertEqual("Na fila", clipItem.Subtitle, "ClipItem subtitle without duration");
 AssertEqual("", clipItem.ResolutionBadge, "ClipItem ResolutionBadge empty when unset");
+AssertEqual("", clipItem.FrameRateBadge, "ClipItem FrameRateBadge empty when unset");
+AssertEqual("", clipItem.MetadataBadge, "ClipItem MetadataBadge empty when unset");
+clipItem.FrameRate = 30.0;
+AssertEqual("30 fps", clipItem.FrameRateBadge, "ClipItem FrameRateBadge integer fps");
+AssertEqual("30 fps", clipItem.MetadataBadge, "ClipItem MetadataBadge fps only");
+clipItem.VideoWidth = 1920;
+clipItem.VideoHeight = 1080;
+AssertEqual("1920×1080 · 30 fps", clipItem.MetadataBadge, "ClipItem MetadataBadge resolution + integer fps");
+clipItem.FrameRate = 29.97;
+AssertEqual("29.97 fps", clipItem.FrameRateBadge, "ClipItem FrameRateBadge fractional fps");
+AssertEqual("1920×1080 · 29.97 fps", clipItem.MetadataBadge, "ClipItem MetadataBadge resolution + fractional fps");
+clipItem.FrameRate = null;
+AssertEqual("1920×1080", clipItem.MetadataBadge, "ClipItem MetadataBadge resolution only");
+clipItem.FrameRate = -5;
+AssertEqual<double?>(null, clipItem.FrameRate, "ClipItem FrameRate normalizes non-positive to null");
 clipItem.VideoWidth = 3840;
 clipItem.VideoHeight = 2160;
 AssertEqual("4K", clipItem.ResolutionBadge, "ClipItem ResolutionBadge 4K");
@@ -277,6 +292,18 @@ try
         AssertPixelNear(decodedOdd, 240, 60, 0, 255, 0, "MF 321 TR green");
         AssertPixelNear(decodedOdd, 80, 180, 255, 0, 0, "MF 321 BL blue");
         AssertPixelNear(decodedOdd, 240, 180, 255, 255, 255, "MF 321 BR white");
+
+        var detectedFps = MediaFoundationFrameCodec.TryGetFrameRate(mp4A);
+        AssertTrue(detectedFps.HasValue, "TryGetFrameRate returns value for 30fps MP4");
+        AssertNear(30.0, detectedFps ?? 0.0, "TryGetFrameRate 30fps MP4 value", eps: 0.1);
+
+        var missingMp4 = Path.Combine(tempDir, "does-not-exist.mp4");
+        AssertEqual<double?>(null, MediaFoundationFrameCodec.TryGetFrameRate(missingMp4), "TryGetFrameRate returns null on missing file");
+        AssertEqual<double?>(null, MediaFoundationFrameCodec.TryGetFrameRate(""), "TryGetFrameRate returns null on empty path");
+
+        var invalidMp4 = Path.Combine(tempDir, "corrupt.mp4");
+        File.WriteAllText(invalidMp4, "not a valid mp4 stream");
+        AssertEqual<double?>(null, MediaFoundationFrameCodec.TryGetFrameRate(invalidMp4), "TryGetFrameRate returns null on invalid file");
     }
 
     // --- SettingsStore ---

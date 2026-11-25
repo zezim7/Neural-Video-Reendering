@@ -4,13 +4,17 @@
 
 Editor, cortador e processador neural de vídeo e imagens (DLSS 5 / NR) 100% offline para Windows 11 x64. Executa localmente na GPU usando o motor Veyra incluído nos pacotes portáteis, sem nuvem e sem dependências externas.
 
+![Janela principal do Video NR](docs/screenshots/editor-main.png)
+
 ## Recursos
 
 - **Renderização Neural em camadas (até 4 passes)** — configure resolução interna (`480p` a `1440p` ou `Nativa`), **Intensidade**, **Tom** e **Estrutura** por camada, aplique predefinições (`Sutil`, `Equilibrado`, `Máximo`), duplique camadas ou dê duplo-clique em qualquer slider para restaurar `1.00`.
-- **Print e Imagens com DLSS 5 / NR** — renderize um único frame no ponto atual do vídeo (`P`), capture uma região ou monitor da tela (`Ctrl+Shift+P`), abra imagens (`PNG`, `JPG`, `BMP`, `WEBP`, `TIFF`) ou cole da área de transferência (`Ctrl+V`). Inclui janela interativa de comparação antes/depois com zoom `100%` (1:1), cópia para a área de transferência e salvamento em PNG/JPG.
-- **Corte preciso e fila com miniaturas** — navegue pela régua de tempo, avance frame a frame (`,` / `.`), arraste as alças de corte ou digite limites em `HH:MM:SS.mmm`. A fila lateral exibe miniaturas reais e resolução detectada de cada clipe e guarda cortes independentes por vídeo.
+- **Print e Imagens com DLSS 5 / NR** — renderize um único frame no ponto atual do vídeo (`P`), capture uma região ou monitor da tela (`Ctrl+Shift+P`), abra imagens (`PNG`, `JPG`, `BMP`, `WEBP`, `TIFF`) ou cole da área de transferência (`Ctrl+V`). Inclui janela interativa de comparação antes/depois com zoom `100%` (1:1), arrasto para mover (pan), alternância de zoom no ponto do cursor, cópia para a área de transferência e salvamento em PNG/JPG.
+- **Corte preciso e fila com miniaturas** — navegue pela régua de tempo, avance frame a frame (`,` / `.`) usando o FPS real detectado do clipe (com fallback para `30 fps`), arraste as alças de corte ou digite limites em `HH:MM:SS.mmm`. A fila lateral exibe miniaturas reais, resolução e FPS detectados de cada clipe e guarda cortes independentes por vídeo.
 - **Exportação em lote para MP4 (H.264 / HEVC)** — arraste vídeos ou pastas para a janela e exporte tudo em sequência preservando resolução, FPS e faixas de áudio compatíveis.
 - **Interface nativa Windows 11** — UI .NET 8 WPF com barra de título integrada (`WindowChrome`), ícones `Segoe Fluent Icons`, suporte a DPI Per-Monitor v2 e salvamento automático das preferências.
+
+![Comparação antes e depois em DLSS 5 / NR](docs/screenshots/print-preview.png)
 
 ## Download e uso rápido
 
@@ -36,10 +40,12 @@ Editor, cortador e processador neural de vídeo e imagens (DLSS 5 / NR) 100% off
 
 ## Atalhos de teclado
 
+### Editor principal
+
 | Atalho | Ação |
 | :--- | :--- |
 | `Espaço` ou clique no vídeo | Reproduzir / Pausar |
-| `,` / `.` | Voltar / Avançar 1 frame |
+| `,` / `.` | Voltar / Avançar 1 frame (usa o FPS real do clipe) |
 | `←` / `→` | Voltar / Avançar 1 segundo |
 | `Shift` + `←` / `→` | Voltar / Avançar 5 segundos |
 | `I` / `O` | Marcar início / fim do corte no ponto atual |
@@ -50,6 +56,18 @@ Editor, cortador e processador neural de vídeo e imagens (DLSS 5 / NR) 100% off
 | `Ctrl` + `V` | Colar imagem da área de transferência para DLSS 5 / NR |
 | `Ctrl` + `O` | Abrir vídeos |
 | `Delete` | Remover o vídeo selecionado da fila |
+
+### Visualização de Print (`DLSS 5 / NR`)
+
+| Atalho / Gesto | Ação |
+| :--- | :--- |
+| `1` / `2` | Alternar entre Ajustar e `100%` (1:1) |
+| Duplo-clique ou `Ctrl` + Roda | Alternar Ajustar / `100%` focado no cursor |
+| Botão do meio, ou arrastar (`NR` / `Original` / segurando `Espaço`) | Mover imagem (pan) no zoom `100%` |
+| `←` / `→` (`Shift` + `←` / `→`) | Ajustar divisória ±2% (±10%) no modo Comparar |
+| `Ctrl` + `C` | Copiar imagem renderizada para a área de transferência |
+| `Ctrl` + `S` | Salvar imagem renderizada em PNG |
+| `Esc` | Fechar visualização |
 
 ## Compilar e testar
 
@@ -78,18 +96,19 @@ python scripts/package-windows.py
 ├── App/                        # Interface WPF (.NET 8)
 │   ├── Assets/                 # Ícone multi-resolução da aplicação
 │   ├── Helpers/                # Integração DWM dark mode e WindowChrome
-│   ├── Imaging/                # Captura de tela GDI, leitura/escrita WIC e miniaturas
+│   ├── Imaging/                # Captura de tela GDI, leitura/escrita WIC, miniaturas e leitura de FPS
 │   ├── Models/                 # ClipItem, NrLayer, TrimSelection
-│   ├── Services/               # EngineLocator, VideoExporter, PrintProcessor, MediaFoundationFrameCodec, RawImage, SettingsStore
+│   ├── Services/               # EngineLocator, VideoExporter, PrintProcessor, MediaFoundationFrameCodec, MediaFoundationInterop, RawImage, SettingsStore
 │   ├── Themes/                 # Sistema visual compartilhado (Theme.xaml)
 │   ├── Editor.xaml             # Layout principal
 │   ├── Editor.xaml.cs          # Barra de título, fila, predefinições e atalhos
-│   ├── Editor.Playback.cs      # Player, régua de tempo, corte e scrub
+│   ├── Editor.Playback.cs      # Player, régua de tempo, corte, scrub e passo por FPS real
 │   ├── Editor.Export.cs        # Exportação em lote e fluxo de Print DLSS 5
-│   ├── PrintPreviewWindow.*    # Comparador antes/depois e inspeção 1:1
+│   ├── PrintPreviewWindow.*    # Comparador antes/depois e inspeção 1:1 com pan/zoom
 │   └── ScreenCaptureOverlay.*  # Overlay multi-monitor para captura de tela
 ├── Engine.cpp                  # Adaptador nativo C++20 (suporta --max-frames)
 ├── Tests/                      # Testes unitários (.NET 8)
+├── docs/screenshots/           # Capturas de tela da aplicação
 ├── scripts/                    # Empacotamento automatizado dos ZIPs Windows
 └── Build.ps1                   # Script de build Windows
 ```
