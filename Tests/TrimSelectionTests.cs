@@ -74,6 +74,7 @@ AssertTrue(!TrimSelection.TryParse("1:2:3:4", out _), "TryParse rejects >3 parts
 AssertTrue(!TrimSelection.TryParse("-5", out _), "TryParse rejects negative");
 
 // --- NrLayer ---
+AssertEqual("NVIDIA original · RTX 50", NrLayer.Models[0].ToString(), "NrModelOption ToString returns Label");
 var layer = new NrLayer { Index = 2, ResolutionIndex = 1, Intensity = 0.75, Tone = 0.5, Structure = 0.25 };
 AssertEqual("Camada NR 2", layer.Title, "NrLayer title");
 AssertEqual("5 0.75 0.50 0.25", layer.Encode(), "NrLayer Encode invariant format");

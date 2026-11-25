@@ -3,9 +3,15 @@ using System.Runtime.CompilerServices;
 
 namespace VideoNR.Models;
 
-internal sealed record NrResolutionOption(string Name, int Policy);
+public sealed record NrResolutionOption(string Name, int Policy)
+{
+    public override string ToString() => Name;
+}
 
-internal sealed record NrModelOption(string Tag, string Label, string Vendor);
+public sealed record NrModelOption(string Tag, string Label, string Vendor)
+{
+    public override string ToString() => Label;
+}
 
 internal sealed class NrLayer : INotifyPropertyChanged
 {
