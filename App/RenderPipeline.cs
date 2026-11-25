@@ -28,13 +28,14 @@ internal sealed class RenderPipeline(string directory)
         if (layers.Length == 0)
         {
             report(25, "Codificando vídeo");
-            await Ffmpeg([.. seek, "-i", input, .. trim, "-map", "0:v:0", "-map", "0:a?", .. format], cancellation);
+            await Ffmpeg([.. seek, "-i", input, .. trim, "-map", "0:v:0", "-map", "0:a?",
+                "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", .. format], cancellation);
         }
         else
         {
             var metadata = await Run(ffprobe,
                 ["-v", "error", "-select_streams", "v:0", "-show_entries",
-                 "stream=width,height,avg_frame_rate,r_frame_rate,color_transfer", "-of", "json", input], cancellation);
+                 "stream=width,height,avg_frame_rate,r_frame_rate,color_transfer:stream_side_data=rotation", "-of", "json", input], cancellation);
             using var probe = JsonDocument.Parse(metadata);
             var stream = probe.RootElement.GetProperty("streams").EnumerateArray().FirstOrDefault();
             if (stream.ValueKind != JsonValueKind.Object) throw new IOException("O arquivo não tem uma faixa de vídeo.");
@@ -42,13 +43,17 @@ internal sealed class RenderPipeline(string directory)
                 throw new IOException("Desative Melhoria NR para exportar este vídeo HDR.");
             var width = (stream.GetProperty("width").GetInt32() + 1) / 2 * 2;
             var height = (stream.GetProperty("height").GetInt32() + 1) / 2 * 2;
+            if (stream.TryGetProperty("side_data_list", out var sideData)
+                && sideData.EnumerateArray().Any(data => data.TryGetProperty("rotation", out var rotation)
+                    && rotation.TryGetInt32(out var degrees) && Math.Abs(degrees % 180) == 90))
+                (width, height) = (height, width);
             var rate = stream.GetProperty("avg_frame_rate").GetString();
             if (rate is null or "0/0" or "0/1") rate = stream.GetProperty("r_frame_rate").GetString();
             if (rate is null or "0/0" or "0/1") throw new IOException("Não foi possível determinar a taxa de quadros.");
             var size = $"{width}:{height}";
             var current = files.Directory("original");
             report(5, "Extraindo quadros");
-            await Ffmpeg([.. seek, "-noautorotate", "-i", input, .. trim, "-an",
+            await Ffmpeg([.. seek, "-i", input, .. trim, "-an",
                 "-vf", $"fps={rate},scale={size}", "-start_number", "1", Frames(current)], cancellation);
 
             for (var i = 0; i < layers.Length; i++)
@@ -70,7 +75,7 @@ internal sealed class RenderPipeline(string directory)
                 if (Directory.GetFiles(current, "*.png").Length != Directory.GetFiles(enhanced, "*.png").Length)
                     throw new IOException("O motor neural não devolveu todos os quadros.");
                 await Ffmpeg([.. Sequence(current, rate), .. Sequence(enhanced, rate),
-                    "-filter_complex", blend, "-map", "[v]", Frames(mixed)], cancellation);
+                    "-filter_complex_threads", "1", "-filter_complex", blend, "-map", "[v]", Frames(mixed)], cancellation);
                 Directory.Delete(current, true);
                 Directory.Delete(small, true);
                 Directory.Delete(enhanced, true);
@@ -79,7 +84,7 @@ internal sealed class RenderPipeline(string directory)
 
             report(85, "Codificando vídeo e áudio");
             await Ffmpeg([.. Sequence(current, rate), .. seek, "-i", input, .. trim, "-map", "0:v:0",
-                "-map", "1:a?", "-shortest", .. format], cancellation);
+                "-map", "1:a?", "-af", "apad", "-shortest", .. format], cancellation);
         }
 
         cancellation.ThrowIfCancellationRequested();

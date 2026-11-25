@@ -16,7 +16,7 @@ FFMPEG = (
 NEURAL = (
     "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip",
     45474481,
-    None,
+    "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d",
 )
 
 
@@ -28,7 +28,7 @@ def unpack(work, name, asset):
     with path.open("rb") as package:
         digest = hashlib.file_digest(package, "sha256").hexdigest()
     print(f"{name} SHA-256: {digest}", flush=True)
-    if path.stat().st_size != size or (sha256 and digest != sha256):
+    if path.stat().st_size != size or digest != sha256:
         raise ValueError(f"Falha na verificação de {name}.")
     destination = work / name
     with ZipFile(path) as package:
