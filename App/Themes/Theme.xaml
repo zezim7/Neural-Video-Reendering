@@ -313,6 +313,7 @@
     <Style x:Key="SegmentedOption" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
         <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Padding" Value="10,3"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="11.5"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -321,7 +322,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Border x:Name="Pill" Background="{TemplateBinding Background}" BorderBrush="Transparent"
-                            BorderThickness="1" CornerRadius="3" Padding="10,3">
+                            BorderThickness="1" CornerRadius="3" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -630,6 +631,34 @@
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Tile" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Horizontal Hairline Splitter -->
+    <Style x:Key="HorizontalHairlineSplitter" TargetType="GridSplitter">
+        <Setter Property="Height" Value="5"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Cursor" Value="SizeNS"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GridSplitter">
+                    <Grid Background="Transparent">
+                        <Border x:Name="Line" Height="1" VerticalAlignment="Center" Background="{StaticResource BorderSubtle}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{StaticResource Accent}"/>
+                            <Setter TargetName="Line" Property="Height" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{StaticResource Accent}"/>
+                            <Setter TargetName="Line" Property="Height" Value="2"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

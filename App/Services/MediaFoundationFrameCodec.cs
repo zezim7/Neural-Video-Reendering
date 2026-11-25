@@ -4,16 +4,27 @@ using static VideoNR.Services.MediaFoundationInterop;
 
 namespace VideoNR.Services;
 
+internal sealed record VideoProbeInfo(int Width, int Height, double? FrameRate, double DurationSeconds, bool HasAudio);
+
 internal static class MediaFoundationFrameCodec
 {
-    public static double? TryGetFrameRate(string videoPath)
+    public static double? TryGetFrameRate(string videoPath) => TryProbe(videoPath)?.FrameRate;
+
+    public static double? TryGetDuration(string videoPath)
+    {
+        var probe = TryProbe(videoPath);
+        return probe is { DurationSeconds: > 0 } ? probe.DurationSeconds : null;
+    }
+
+    internal static VideoProbeInfo? TryProbe(string videoPath)
     {
         if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
             return null;
 
         var mfStarted = false;
         IMFSourceReader? reader = null;
-        IMFMediaType? mediaType = null;
+        IMFMediaType? videoType = null;
+        IMFMediaType? audioType = null;
         try
         {
             if (MFStartup(MfApiVersion, MfStartupNoSocket) < 0)
@@ -23,23 +34,45 @@ internal static class MediaFoundationFrameCodec
             if (MFCreateSourceReaderFromURL(videoPath, null, out reader) < 0 || reader is null)
                 return null;
 
-            if (reader.GetNativeMediaType(MfSourceReaderFirstVideoStream, 0, out mediaType) < 0 || mediaType is null)
+            if (reader.GetNativeMediaType(MfSourceReaderFirstVideoStream, 0, out videoType) < 0 || videoType is null)
             {
-                ReleaseCom(mediaType);
-                mediaType = null;
-                if (reader.GetCurrentMediaType(MfSourceReaderFirstVideoStream, out mediaType) < 0 || mediaType is null)
+                ReleaseCom(videoType);
+                videoType = null;
+                if (reader.GetCurrentMediaType(MfSourceReaderFirstVideoStream, out videoType) < 0 || videoType is null)
                     return null;
             }
 
-            if (mediaType.GetUINT64(in MfMtFrameRate, out var packedRate) < 0)
-                return null;
+            var width = 0;
+            var height = 0;
+            if (videoType.GetUINT64(in MfMtFrameSize, out var packedSize) == 0)
+            {
+                var (w, h) = Unpack2UInt32(packedSize);
+                width = (int)w;
+                height = (int)h;
+            }
 
-            var (numerator, denominator) = Unpack2UInt32(packedRate);
-            if (numerator == 0 || denominator == 0)
-                return null;
+            double? fps = null;
+            if (videoType.GetUINT64(in MfMtFrameRate, out var packedRate) == 0)
+            {
+                var (numerator, denominator) = Unpack2UInt32(packedRate);
+                if (numerator > 0 && denominator > 0)
+                {
+                    var candidate = (double)numerator / denominator;
+                    if (double.IsFinite(candidate) && candidate > 0)
+                        fps = candidate;
+                }
+            }
 
-            var fps = (double)numerator / denominator;
-            return double.IsFinite(fps) && fps > 0 ? fps : null;
+            var duration = 0.0;
+            if (reader.GetPresentationAttribute(MfSourceReaderMediaSource, in MfPdDuration, out var durationVar) == 0
+                && (durationVar.vt == VtUi8 || durationVar.vt == VtI8)
+                && durationVar.hVal > 0)
+            {
+                duration = durationVar.hVal / 10_000_000.0;
+            }
+
+            var hasAudio = reader.GetNativeMediaType(MfSourceReaderFirstAudioStream, 0, out audioType) == 0 && audioType is not null;
+            return new VideoProbeInfo(width, height, fps, duration, hasAudio);
         }
         catch (Exception error) when (error is IOException or COMException or UnauthorizedAccessException or NotSupportedException or InvalidOperationException or DllNotFoundException)
         {
@@ -47,7 +80,8 @@ internal static class MediaFoundationFrameCodec
         }
         finally
         {
-            ReleaseCom(mediaType);
+            ReleaseCom(audioType);
+            ReleaseCom(videoType);
             ReleaseCom(reader);
             if (mfStarted)
                 _ = MFShutdown();
@@ -230,51 +264,8 @@ internal static class MediaFoundationFrameCodec
                 throw new IOException("Nenhum frame de vídeo pôde ser decodificado.");
 
             CheckHr(reader.GetCurrentMediaType(MfSourceReaderFirstVideoStream, out currentType), "GetCurrentMediaType");
-            CheckHr(currentType.GetUINT64(in MfMtFrameSize, out var packedSize), "GetUINT64(FrameSize)");
-            var (rawW, rawH) = Unpack2UInt32(packedSize);
-            var bufW = (int)rawW;
-            var bufH = (int)rawH;
-            if (bufW <= 0 || bufH <= 0)
-                throw new IOException($"Dimensões inválidas retornadas pelo decodificador ({bufW}x{bufH}).");
-
-            var defaultStride = bufW * 4;
-            if (currentType.GetUINT32(in MfMtDefaultStride, out var rawStride) == 0)
-            {
-                var signed = unchecked((int)rawStride);
-                if (signed != 0)
-                    defaultStride = signed;
-            }
-
-            var cropX = 0;
-            var cropY = 0;
-            var cropW = bufW;
-            var cropH = bufH;
-            var aperturePtr = Marshal.AllocHGlobal(16);
-            try
-            {
-                if (currentType.GetBlob(in MfMtMinimumDisplayAperture, aperturePtr, 16, out var blobSize) == 0 && blobSize >= 16)
-                {
-                    var aperture = new byte[16];
-                    Marshal.Copy(aperturePtr, aperture, 0, 16);
-                    int ox = BitConverter.ToInt16(aperture, 2);
-                    int oy = BitConverter.ToInt16(aperture, 6);
-                    var aw = BitConverter.ToInt32(aperture, 8);
-                    var ah = BitConverter.ToInt32(aperture, 12);
-                    if (ox >= 0 && oy >= 0 && aw > 0 && ah > 0 && ox + aw <= bufW && oy + ah <= bufH)
-                    {
-                        cropX = ox;
-                        cropY = oy;
-                        cropW = aw;
-                        cropH = ah;
-                    }
-                }
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(aperturePtr);
-            }
-
-            return ExtractBgraFromSample(selectedSample, bufH, defaultStride, cropX, cropY, cropW, cropH);
+            var layout = ReadVideoLayout(currentType);
+            return ExtractBgraFromSample(selectedSample, layout.BufH, layout.DefaultStride, layout.CropX, layout.CropY, layout.CropW, layout.CropH);
         }
         finally
         {
@@ -287,7 +278,58 @@ internal static class MediaFoundationFrameCodec
         }
     }
 
-    private static RawImage ExtractBgraFromSample(
+    internal readonly record struct VideoSampleLayout(int BufW, int BufH, int DefaultStride, int CropX, int CropY, int CropW, int CropH);
+
+    internal static VideoSampleLayout ReadVideoLayout(IMFMediaType currentType)
+    {
+        CheckHr(currentType.GetUINT64(in MfMtFrameSize, out var packedSize), "GetUINT64(FrameSize)");
+        var (rawW, rawH) = Unpack2UInt32(packedSize);
+        var bufW = (int)rawW;
+        var bufH = (int)rawH;
+        if (bufW <= 0 || bufH <= 0)
+            throw new IOException($"Dimensões inválidas retornadas pelo decodificador ({bufW}x{bufH}).");
+
+        var defaultStride = bufW * 4;
+        if (currentType.GetUINT32(in MfMtDefaultStride, out var rawStride) == 0)
+        {
+            var signed = unchecked((int)rawStride);
+            if (signed != 0)
+                defaultStride = signed;
+        }
+
+        var cropX = 0;
+        var cropY = 0;
+        var cropW = bufW;
+        var cropH = bufH;
+        var aperturePtr = Marshal.AllocHGlobal(16);
+        try
+        {
+            if (currentType.GetBlob(in MfMtMinimumDisplayAperture, aperturePtr, 16, out var blobSize) == 0 && blobSize >= 16)
+            {
+                var aperture = new byte[16];
+                Marshal.Copy(aperturePtr, aperture, 0, 16);
+                int ox = BitConverter.ToInt16(aperture, 2);
+                int oy = BitConverter.ToInt16(aperture, 6);
+                var aw = BitConverter.ToInt32(aperture, 8);
+                var ah = BitConverter.ToInt32(aperture, 12);
+                if (ox >= 0 && oy >= 0 && aw > 0 && ah > 0 && ox + aw <= bufW && oy + ah <= bufH)
+                {
+                    cropX = ox;
+                    cropY = oy;
+                    cropW = aw;
+                    cropH = ah;
+                }
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(aperturePtr);
+        }
+
+        return new VideoSampleLayout(bufW, bufH, defaultStride, cropX, cropY, cropW, cropH);
+    }
+
+    internal static RawImage ExtractBgraFromSample(
         IMFSample sample,
         int bufH,
         int defaultStride,

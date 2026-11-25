@@ -11,12 +11,24 @@ internal sealed record SavedLayer(
     double Tone,
     double Structure);
 
+internal sealed record SavedCustomPreset(
+    string Name,
+    double Intensity,
+    double Tone,
+    double Structure);
+
 internal sealed record UserSettings(
     bool NrEnabled = true,
     string ModelTag = "original",
     int CodecIndex = 0,
     List<SavedLayer>? Layers = null,
-    Dictionary<string, string>? CustomEngines = null);
+    Dictionary<string, string>? CustomEngines = null,
+    int ExportModeIndex = 0,
+    double QueueWidth = 248,
+    double InspectorWidth = 316,
+    double TimelineHeight = 236,
+    bool QueueOpen = true,
+    List<SavedCustomPreset>? CustomPresets = null);
 
 internal static class SettingsStore
 {

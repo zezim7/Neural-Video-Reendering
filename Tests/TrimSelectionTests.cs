@@ -304,7 +304,146 @@ try
         var invalidMp4 = Path.Combine(tempDir, "corrupt.mp4");
         File.WriteAllText(invalidMp4, "not a valid mp4 stream");
         AssertEqual<double?>(null, MediaFoundationFrameCodec.TryGetFrameRate(invalidMp4), "TryGetFrameRate returns null on invalid file");
+
+        var detectedDur = MediaFoundationFrameCodec.TryGetDuration(mp4A);
+        AssertTrue(detectedDur is > 0.03, "TryGetDuration returns positive duration");
+        AssertEqual<double?>(null, MediaFoundationFrameCodec.TryGetDuration(missingMp4), "TryGetDuration returns null on missing file");
+
+        // --- VideoConcatenator Live Roundtrip (Mixed Resolutions) ---
+        var redImg = MakeSolid(160, 120, 0, 0, 230);
+        var blueImg = MakeSolid(240, 120, 230, 0, 0);
+        var seg1Mp4 = Path.Combine(tempDir, "seg1.mp4");
+        var seg2Mp4 = Path.Combine(tempDir, "seg2.mp4");
+        var mergedMp4 = Path.Combine(tempDir, "merged.mp4");
+        MediaFoundationFrameCodec.EncodeStillVideo(redImg, seg1Mp4, frameCount: 15, fps: 30);
+        MediaFoundationFrameCodec.EncodeStillVideo(blueImg, seg2Mp4, frameCount: 15, fps: 30);
+
+        var lastConcatProgress = 0;
+        VideoConcatenator.Concatenate([seg1Mp4, seg2Mp4], mergedMp4, preferHevc: false, p => lastConcatProgress = p, CancellationToken.None);
+        AssertEqual(10000, lastConcatProgress, "VideoConcatenator reaches 100%");
+        AssertTrue(File.Exists(mergedMp4) && new FileInfo(mergedMp4).Length > 0, "VideoConcatenator creates non-empty output");
+
+        var mergedProbe = MediaFoundationFrameCodec.TryProbe(mergedMp4);
+        AssertTrue(mergedProbe is not null, "VideoConcatenator output probe succeeds");
+        AssertEqual(160, mergedProbe!.Width, "VideoConcatenator preserves target width");
+        AssertEqual(120, mergedProbe.Height, "VideoConcatenator preserves target height");
+        AssertTrue(mergedProbe.DurationSeconds >= 0.85, "VideoConcatenator combined duration >= 0.85s");
+
+        var mergedStartFrame = MediaFoundationFrameCodec.DecodeFrame(mergedMp4, 0.05);
+        var mergedEndFrame = MediaFoundationFrameCodec.DecodeFrame(mergedMp4, 0.75);
+        AssertPixelNear(mergedStartFrame, 80, 60, 0, 0, 230, "VideoConcatenator first half red");
+        AssertPixelNear(mergedEndFrame, 80, 60, 230, 0, 0, "VideoConcatenator second half blue (letterboxed)");
     }
+
+    // --- Multi-Track TimelineSequence & TimelineHistory ---
+    var seq = new TimelineSequence();
+    var hist = new TimelineHistory();
+    AssertTrue(seq.IsEmpty, "TimelineSequence starts empty");
+    AssertEqual(2, seq.TrackCount, "TimelineSequence starts with 2 tracks (V1, V2)");
+    AssertEqual("V1", seq.Tracks[0].Name, "Track 0 is V1");
+    AssertEqual("V2", seq.Tracks[1].Name, "Track 1 is V2");
+    AssertNear(0, seq.TotalDuration, "TimelineSequence empty duration");
+
+    AssertTrue(seq.AddTrack() is { Name: "V3" }, "AddTrack adds V3");
+    AssertEqual(3, seq.TrackCount, "TrackCount is 3 after AddTrack");
+    AssertTrue(seq.RemoveTopEmptyTrack(), "RemoveTopEmptyTrack removes empty V3");
+    AssertEqual(2, seq.TrackCount, "TrackCount restored to 2");
+
+    var segA = seq.AppendClip("/videos/clipA.mp4", 10.0, colorIndex: 0, trackIndex: 0);
+    var segB = seq.AppendClip("/videos/clipB.mp4", 6.0, colorIndex: 1, trackIndex: 0);
+    AssertEqual(2, seq.Count, "TimelineSequence count after append");
+    AssertNear(0.0, segA.TimelineStart, "segA starts at 0");
+    AssertNear(10.0, segB.TimelineStart, "segB starts at 10");
+    AssertNear(16.0, seq.TotalDuration, "TimelineSequence TotalDuration");
+    AssertNear(16.0, seq.ActiveDuration, "TimelineSequence ActiveDuration");
+
+    segA.UseCustomNr = true;
+    segA.CustomNr = new SegmentNrProfile(true, [new SavedLayer(true, 0, 0.75, 0.80, 0.75)]);
+    AssertEqual("NR ×1", segA.NrBadge, "TimelineSegment custom NrBadge");
+
+    hist.PushUndo(seq, segA.Id);
+    var splitRes = seq.SplitSegmentAt(segA.Id, 4.0);
+    AssertTrue(splitRes.HasValue, "SplitSegmentAt middle of segA succeeds");
+    AssertEqual(3, seq.Count, "SplitSegmentAt increases count to 3");
+    AssertNear(0.0, splitRes!.Value.Left.TimelineStart, "Split left TimelineStart");
+    AssertNear(4.0, splitRes.Value.Left.Duration, "Split left duration");
+    AssertNear(4.0, splitRes.Value.Right.TimelineStart, "Split right TimelineStart");
+    AssertNear(6.0, splitRes.Value.Right.Duration, "Split right duration");
+    AssertTrue(splitRes.Value.Right.UseCustomNr && splitRes.Value.Right.CustomNr?.ActiveLayerCount == 1, "Split clones custom NR profile");
+    AssertTrue(seq.SplitSegmentAt(segA.Id, 0.01) is null, "SplitSegmentAt rejects cut too close to edge");
+
+    // Multi-track composition: add overlay clip on V2 from 2.0s to 5.0s covering split seam!
+    var segOverlay = seq.AddClipAt("/videos/overlay.mp4", 3.0, timelineStart: 2.0, trackIndex: 1, colorIndex: 2);
+    AssertEqual(1, segOverlay.TrackIndex, "Overlay clip lands on V2");
+    AssertNear(2.0, segOverlay.TimelineStart, "Overlay clip starts at 2.0");
+
+    var comp = seq.ResolveComposition();
+    AssertEqual(4, comp.Count, "ResolveComposition produces 4 slices (segA-L 0..2, V2 2..5, segA-R 5..10, segB 10..16)");
+    AssertEqual(segA.Id, comp[0].Segment.Id, "Slice 0 is segA left");
+    AssertNear(2.0, comp[0].TimelineEnd, "Slice 0 ends at 2.0");
+    AssertEqual(segOverlay.Id, comp[1].Segment.Id, "Slice 1 is V2 overlay");
+    AssertNear(2.0, comp[1].TimelineStart, "Slice 1 starts at 2.0");
+    AssertNear(5.0, comp[1].TimelineEnd, "Slice 1 ends at 5.0");
+    AssertEqual(splitRes.Value.Right.Id, comp[2].Segment.Id, "Slice 2 is segA right after overlay");
+    AssertNear(5.0, comp[2].SourceStart, "Slice 2 source start offset correctly past overlay end");
+    AssertEqual(segB.Id, comp[3].Segment.Id, "Slice 3 is segB");
+    AssertNear(16.0, seq.ActiveDuration, "Total ActiveDuration remains 16s");
+
+    // Track visibility hiding V2
+    seq.Tracks[1].Visible = false;
+    var compHiddenV2 = seq.ResolveComposition();
+    AssertEqual(3, compHiddenV2.Count, "Hiding V2 reveals 3 V1 slices only");
+    AssertNear(4.0, compHiddenV2[0].TimelineEnd, "V1 slice 0 restores full 0..4 when V2 hidden");
+    seq.Tracks[1].Visible = true;
+
+    // True NLE TrimEdge left & right
+    // Move overlay from 2..5 to 17..20 so we test TrimEdge freely
+    AssertTrue(seq.MoveSegmentTo(segOverlay.Id, 17.0, 1), "MoveSegmentTo moves overlay on V2");
+    AssertNear(17.0, segOverlay.TimelineStart, "MoveSegmentTo updated TimelineStart");
+    AssertNear(20.0, seq.TotalDuration, "TotalDuration reflects moved overlay");
+
+    // Trim segOverlay left by +1.0 -> TimelineStart becomes 18.0, SourceStart becomes 1.0, TimelineEnd stays 20.0
+    AssertTrue(seq.TrimEdge(segOverlay.Id, isStart: true, deltaSeconds: 1.0), "TrimEdge left +1s");
+    AssertNear(18.0, segOverlay.TimelineStart, "TrimEdge left shifted TimelineStart");
+    AssertNear(1.0, segOverlay.SourceStart, "TrimEdge left shifted SourceStart");
+    AssertNear(20.0, segOverlay.TimelineEnd, "TrimEdge left kept TimelineEnd fixed");
+    AssertTrue(seq.TrimEdge(segOverlay.Id, isStart: true, deltaSeconds: -1.0), "TrimEdge left pull back -1s");
+    AssertNear(17.0, segOverlay.TimelineStart, "TrimEdge left pull back restored TimelineStart");
+    AssertNear(0.0, segOverlay.SourceStart, "TrimEdge left pull back restored SourceStart");
+
+    // Trim segOverlay right by -0.5 -> TimelineStart stays 17.0, SourceEnd becomes 2.5
+    AssertTrue(seq.TrimEdge(segOverlay.Id, isStart: false, deltaSeconds: -0.5), "TrimEdge right -0.5s");
+    AssertNear(17.0, segOverlay.TimelineStart, "TrimEdge right kept TimelineStart fixed");
+    AssertNear(2.5, segOverlay.SourceEnd, "TrimEdge right reduced SourceEnd");
+
+    // Locked track protection
+    seq.Tracks[1].Locked = true;
+    AssertTrue(!seq.TrimEdge(segOverlay.Id, isStart: true, deltaSeconds: 0.5), "Locked track rejects TrimEdge");
+    AssertTrue(!seq.MoveSegmentTo(segOverlay.Id, 5.0, 0), "Locked track rejects MoveSegmentTo");
+    AssertTrue(seq.SplitSegmentAt(segOverlay.Id, 18.0) is null, "Locked track rejects SplitSegmentAt");
+    AssertTrue(!seq.RemoveSegment(segOverlay.Id), "Locked track rejects RemoveSegment");
+    seq.Tracks[1].Locked = false;
+
+    // Ripple delete & CloseAllGaps
+    AssertTrue(seq.RemoveSegment(splitRes.Value.Right.Id, ripple: true), "Ripple remove segA-right succeeds");
+    AssertNear(4.0, segB.TimelineStart, "Ripple remove shifted segB left from 10 to 4");
+    AssertTrue(seq.CloseAllGaps() >= 1, "CloseAllGaps shifts overlay on V2 from 17 to 0");
+    AssertNear(0.0, segOverlay.TimelineStart, "CloseAllGaps moved V2 clip to 0");
+
+    // Snap & Duplicate
+    var dup = seq.DuplicateSegment(segOverlay.Id);
+    AssertTrue(dup is not null && Math.Abs(dup.TimelineStart - segOverlay.TimelineEnd) < 1e-4, "DuplicateSegment places copy immediately after");
+    AssertNear(4.0, seq.SnapTime(4.08, 0.15), "SnapTime snaps to V1 cut boundary");
+    AssertNear(2.0, seq.SnapTime(2.0, 0.15, playheadSeconds: 1.5), "SnapTime leaves far time unchanged");
+
+    // Undo / Redo across track count/state + segments
+    AssertTrue(hist.CanUndo, "TimelineHistory CanUndo true");
+    AssertTrue(hist.TryUndo(seq, dup!.Id, out var undoSel), "TimelineHistory TryUndo succeeds");
+    AssertEqual(2, seq.Count, "TimelineHistory Undo restores 2 segments");
+    AssertEqual(segA.Id, undoSel, "TimelineHistory Undo restores selected segment id");
+    AssertTrue(hist.CanRedo, "TimelineHistory CanRedo true");
+    AssertTrue(hist.TryRedo(seq, undoSel, out _), "TimelineHistory TryRedo succeeds");
+    AssertEqual(4, seq.Count, "TimelineHistory Redo restores 4 segments");
 
     // --- SettingsStore ---
     var settingsFile = Path.Combine(tempDir, "prefs", "settings.json");
@@ -313,12 +452,25 @@ try
         ModelTag: "sf-performance",
         CodecIndex: 1,
         Layers: SettingsStore.FromNrLayers([layer]),
-        CustomEngines: new Dictionary<string, string> { ["NVIDIA"] = tempDir });
+        CustomEngines: new Dictionary<string, string> { ["NVIDIA"] = tempDir },
+        ExportModeIndex: 1,
+        QueueWidth: 280,
+        InspectorWidth: 340,
+        TimelineHeight: 210,
+        QueueOpen: false,
+        CustomPresets: [new SavedCustomPreset("Cinema", 0.65, 0.70, 0.80)]);
     SettingsStore.Save(toSave, settingsFile);
     var loaded = SettingsStore.Load(settingsFile);
     AssertEqual(false, loaded.NrEnabled, "SettingsStore NrEnabled");
     AssertEqual("sf-performance", loaded.ModelTag, "SettingsStore ModelTag");
     AssertEqual(1, loaded.CodecIndex, "SettingsStore CodecIndex");
+    AssertEqual(1, loaded.ExportModeIndex, "SettingsStore ExportModeIndex");
+    AssertNear(280, loaded.QueueWidth, "SettingsStore QueueWidth");
+    AssertNear(340, loaded.InspectorWidth, "SettingsStore InspectorWidth");
+    AssertNear(210, loaded.TimelineHeight, "SettingsStore TimelineHeight");
+    AssertEqual(false, loaded.QueueOpen, "SettingsStore QueueOpen");
+    AssertEqual(1, loaded.CustomPresets?.Count ?? 0, "SettingsStore CustomPresets count");
+    AssertEqual("Cinema", loaded.CustomPresets![0].Name, "SettingsStore CustomPresets name");
     var restoredLayers = SettingsStore.ToNrLayers(loaded, 4);
     AssertEqual(1, restoredLayers.Count, "SettingsStore layers count");
     AssertEqual(layer.Encode(), restoredLayers[0].Encode(), "SettingsStore layer encoding preserved");

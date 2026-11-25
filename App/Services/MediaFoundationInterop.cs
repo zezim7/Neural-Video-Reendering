@@ -9,15 +9,22 @@ internal static class MediaFoundationInterop
     internal const uint MfStartupNoSocket = 0x00000001;
     internal const uint MfSourceReaderAllStreams = 0xFFFFFFFE;
     internal const uint MfSourceReaderFirstVideoStream = 0xFFFFFFFC;
+    internal const uint MfSourceReaderFirstAudioStream = 0xFFFFFFFD;
+    internal const uint MfSourceReaderMediaSource = 0xFFFFFFFF;
     internal const uint MfSourceReaderFlagError = 0x00000001;
     internal const uint MfSourceReaderFlagEndOfStream = 0x00000002;
     internal const uint MfSourceReaderFlagStreamTick = 0x00000100;
     internal const uint MfVideoInterlaceProgressive = 2;
     internal const ushort VtI8 = 20;
+    internal const ushort VtUi8 = 21;
 
     internal static readonly Guid MfMediaTypeVideo = new("73646976-0000-0010-8000-00aa00389b71");
+    internal static readonly Guid MfMediaTypeAudio = new("73647561-0000-0010-8000-00aa00389b71");
     internal static readonly Guid MfVideoFormatH264 = new("34363248-0000-0010-8000-00aa00389b71");
+    internal static readonly Guid MfVideoFormatHevc = new("43564548-0000-0010-8000-00aa00389b71");
     internal static readonly Guid MfVideoFormatRgb32 = new("00000016-0000-0010-8000-00aa00389b71");
+    internal static readonly Guid MfAudioFormatPcm = new("00000001-0000-0010-8000-00aa00389b71");
+    internal static readonly Guid MfAudioFormatAac = new("00001610-0000-0010-8000-00aa00389b71");
 
     internal static readonly Guid MfMtMajorType = new("48eba18e-f8c9-4687-bf11-0a74c9f96a8f");
     internal static readonly Guid MfMtSubtype = new("f7e34c9a-42e8-4714-b74b-cb29d72c35e5");
@@ -28,6 +35,12 @@ internal static class MediaFoundationInterop
     internal static readonly Guid MfMtAvgBitrate = new("20332624-fb0d-4d9e-bd0d-cbf6786c102e");
     internal static readonly Guid MfMtDefaultStride = new("644b4e48-1e02-4516-b0eb-c01ca9d49ac6");
     internal static readonly Guid MfMtMinimumDisplayAperture = new("d7388766-18fe-48c6-a177-ee894867c8c4");
+    internal static readonly Guid MfMtAudioNumChannels = new("37e48bf5-645e-4c5b-89de-ada9e29b696a");
+    internal static readonly Guid MfMtAudioSamplesPerSecond = new("5faeeae7-0290-4c31-9e8a-c534f68d9dba");
+    internal static readonly Guid MfMtAudioBitsPerSample = new("f2deb57f-40fa-4764-aa33-ed4f2d1ff669");
+    internal static readonly Guid MfMtAudioAvgBytesPerSecond = new("1aab75c8-cfef-451c-ab95-ac034b8e1731");
+    internal static readonly Guid MfMtAudioBlockAlignment = new("322de230-9eeb-43bd-ab7a-ff412251541d");
+    internal static readonly Guid MfPdDuration = new("6c990d33-bb8e-477a-8598-0d5d96fcd88a");
 
     internal static readonly Guid MfSinkWriterDisableThrottling = new("08b845d8-2b74-4afe-9d53-be16d2d5ae4f");
     internal static readonly Guid MfReadWriteEnableHardwareTransforms = new("a634a91c-822b-41b9-a494-4de4643612b0");
