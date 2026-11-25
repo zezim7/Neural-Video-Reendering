@@ -1,19 +1,36 @@
 # Vídeo NR Editor
 
-Editor de vídeos para Windows com corte, fila de exportação e melhoria neural em GPUs compatíveis com Vulkan, incluindo NVIDIA e AMD.
+Editor de vídeos gravados para Windows. Permite selecionar um trecho, aplicar até quatro camadas de renderização neural e salvar um MP4.
 
-## Baixar e usar
+## Baixar
 
-Extraia todo o conteúdo de `VideoNR-win64.zip` e abra `VideoNR.exe`. O pacote traz o runtime do .NET e as ferramentas de processamento. [Releases](../../releases)
+Escolha `VideoNR-NVIDIA-win64.zip` ou `VideoNR-AMD-win64.zip` na [release mais recente](../../releases/latest). Extraia o ZIP inteiro para uma pasta gravável e abra `VideoNR.exe`. Cada ZIP inclui o motor na pasta `motor` e o runtime do .NET.
 
-1. Adicione um ou mais vídeos à fila e selecione o trecho de cada um.
-2. Escolha **Imagem real** ou **Animação**. Ajuste a resolução interna e a intensidade de cada camada. Para exportar sem melhoria neural, desative **Melhoria NR**.
-3. Selecione H.264 ou HEVC e clique em **Iniciar exportação**.
+## Uso
 
-O motor neural trabalha com vídeo SDR, usa espaço temporário para armazenar quadros e converte clipes com taxa variável para taxa constante. Para vídeo HDR, a melhoria neural fica indisponível. A exportação atual usa vídeo de 8 bits. As configurações dos filtros são aplicadas na exportação.
+1. Adicione um ou mais vídeos à fila.
+2. Selecione um vídeo e arraste as alças turquesa ou digite os tempos de início e fim em HH:MM:SS.mmm. Cada vídeo guarda seu próprio corte.
+3. Escolha a versão do NR e ajuste a intensidade, a resolução interna, o tom e a estrutura de cada camada.
+4. Selecione H.264 ou HEVC e clique em **Iniciar exportação**. A fila usa as mesmas configurações de NR e codec e respeita o corte de cada item.
+
+O player usa os codecs disponíveis no Windows. A exportação mantém a resolução e a taxa de quadros da origem e solicita as faixas de áudio compatíveis com MP4.
+
+## Requisitos
+
+Windows 11 x64 e uma GPU compatível com o pacote escolhido.
+
+| Modo | GPUs compatíveis | Pacote |
+| --- | --- | --- |
+| NVIDIA original | RTX 50 | NVIDIA |
+| SF310.9.16, desempenho ou legado | RTX 20 a 50 | NVIDIA |
+| AMD Small ou Original (experimental) | RX 7000 e RX 9000 | AMD |
+
+Os modos AMD exigem o runtime HIP e ainda precisam de teste em uma Radeon neste editor.
 
 ## Compilar
 
-Com o SDK .NET 8 para Windows, execute `./Build.ps1 -SelfContained`. Com Python 3.11 ou superior, execute `python scripts/package-windows.py` para montar o ZIP em `dist/`.
+Use o SDK .NET 8 e um compilador g++ MinGW-w64 x64 com C++20. Execute `./Build.ps1 -Compiler caminho/para/g++.exe`. O executável fica em `build/VideoNR.exe`.
 
-[Dependências e avisos](DEPENDENCIAS.md) · [GPL-3.0](LICENSE.txt)
+Para montar os ZIPs completos, execute `./Build.ps1 -SelfContained` no Windows e depois `python scripts/package-windows.py` com Python 3.11 ou superior. Os ZIPs ficam em `dist/`.
+
+O código é distribuído sob [GPL-3.0](LICENSE.txt).

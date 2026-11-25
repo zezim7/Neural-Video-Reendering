@@ -1,7 +1,11 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -18,13 +22,14 @@ public partial class Editor : Window
 {
     private const int LayerLimit = 4;
     private const string VideoFilter = "Vídeos|*.mp4;*.mkv;*.mov;*.webm;*.avi;*.m4v;*.mts;*.m2ts|Todos os arquivos|*.*";
-    private static readonly (string Name, int Height)[] Resolutions =
-        [("1080p", 1080), ("1440p", 1440), ("900p", 900), ("720p", 720), ("480p", 480), ("Nativa", 0)];
+    private static readonly (string Name, int Policy)[] Resolutions =
+        [("1080p", 0), ("1440p", 5), ("900p", 4), ("720p", 3), ("480p", 2), ("Nativa", 1)];
     private readonly ObservableCollection<ClipItem> clips = [];
     private readonly List<Layer> layers = [new()];
-    private readonly RenderPipeline renderer = new(System.IO.Path.Combine(AppContext.BaseDirectory, "motor"));
+    private readonly Dictionary<string, string> engines = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromMilliseconds(150) };
-    private CancellationTokenSource? exportCancellation;
+    private string? scratch;
+    private string? cancelPath;
     private string? outputFolder;
     private ClipItem? clip;
     private bool busy, playing, ready, scrubbing, refreshingFields, closePending;
@@ -53,7 +58,7 @@ public partial class Editor : Window
         public double Intensity { get; set; } = 1;
         public double Tone { get; set; } = 1;
         public double Structure { get; set; } = 1;
-        public RenderLayer Settings() => new(Resolutions[Resolution].Height, Intensity, Tone, Structure);
+        public string Encode() => FormattableString.Invariant($"{Resolutions[Resolution].Policy} {Intensity:F2} {Tone:F2} {Structure:F2}");
     }
 
     public Editor()
@@ -61,6 +66,11 @@ public partial class Editor : Window
         InitializeComponent();
         Queue.ItemsSource = clips;
         NrVersion.SelectedIndex = 0;
+        foreach (var vendor in new[] { "NVIDIA", "AMD" })
+            if (FindEngine(vendor) is { } path) engines[vendor] = path;
+        if (!engines.ContainsKey("NVIDIA") && engines.ContainsKey("AMD"))
+            NrVersion.SelectedIndex = 3;
+
         DrawLayers();
         RefreshTrimFields();
         UpdateControls();
@@ -69,26 +79,28 @@ public partial class Editor : Window
         Loaded += (_, _) => AddPaths(Environment.GetCommandLineArgs().Skip(1));
     }
 
-    private string Model => (NrVersion.SelectedItem as ComboBoxItem)?.Tag as string ?? RenderPipeline.DefaultModel;
+    private string Model => (NrVersion.SelectedItem as ComboBoxItem)?.Tag as string ?? "original";
+    private string Vendor => Model.StartsWith("amd-", StringComparison.Ordinal) ? "AMD" : "NVIDIA";
+    private string? EnginePath => engines.GetValueOrDefault(Vendor);
     private int ActiveCount => NrSwitch.IsChecked == true ? layers.Count(l => l.Enabled) : 0;
-    private bool CancelRequested => exportCancellation?.IsCancellationRequested == true;
+    private bool CancelRequested => cancelPath is not null && File.Exists(cancelPath);
 
     private void UpdateControls()
     {
         QueueTitle.Text = $"Fila · {clips.Count}";
         EmptyQueue.Visibility = clips.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Queue.IsEnabled = !busy;
-        AddButton.IsEnabled = NrSwitch.IsEnabled = NrVersion.IsEnabled = LayerCards.IsEnabled = Codec.IsEnabled = !busy;
+        AddButton.IsEnabled = EngineButton.IsEnabled = NrSwitch.IsEnabled = NrVersion.IsEnabled = LayerCards.IsEnabled = Codec.IsEnabled = !busy;
         RemoveButton.IsEnabled = !busy && clip is not null;
         ClearButton.IsEnabled = !busy && clips.Count > 0;
         AddLayerButton.IsEnabled = !busy && layers.Count < LayerLimit;
-        EngineLabel.Text = renderer.Ready(ActiveCount > 0, Model) ? "Motor pronto" : "Extraia o ZIP inteiro para carregar o motor";
+        EngineLabel.Text = EnginePath is null ? $"Motor de NR · pacote {Vendor} não localizado" : $"Motor de NR · {Vendor}";
         LayerSummary.Text = ActiveCount == 1 ? "1 camada ativa" : $"{ActiveCount} camadas em sequência";
         PlayButton.IsEnabled = ready;
         TrimTrack.IsEnabled = ready && clip?.Duration > 0;
         StartHandle.IsEnabled = EndHandle.IsEnabled = StartTime.IsEnabled = EndTime.IsEnabled
             = ResetTrimButton.IsEnabled = !busy && TrimTrack.IsEnabled;
-        ExportButton.IsEnabled = !busy && clips.Count > 0 && renderer.Ready(ActiveCount > 0, Model);
+        ExportButton.IsEnabled = !busy && clips.Count > 0 && EnginePath is not null;
         CancelButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         CancelButton.IsEnabled = busy && !CancelRequested;
         ShowOutputButton.Visibility = outputFolder is null ? Visibility.Collapsed : Visibility.Visible;
@@ -461,11 +473,11 @@ public partial class Editor : Window
             return;
         if (e.Key == Key.Space && ready) { TogglePlayback(); e.Handled = true; }
     }
-    private RenderLayer[] Snapshot() => NrSwitch.IsChecked == true ? layers.Where(l => l.Enabled).Select(l => l.Settings()).ToArray() : [];
+    private string[] Snapshot() => NrSwitch.IsChecked == true ? layers.Where(l => l.Enabled).Select(l => l.Encode()).ToArray() : [];
 
     private async void ExportClick(object sender, RoutedEventArgs e)
     {
-        if (busy || !renderer.Ready(ActiveCount > 0, Model) || clips.Count == 0) return;
+        if (busy || EnginePath is not { } engine || clips.Count == 0) return;
         var jobs = clips.ToArray();
         string? single = null;
         string folder;
@@ -503,12 +515,7 @@ public partial class Editor : Window
                 Progress.Value = 0;
                 try
                 {
-                    await renderer.ExportAsync(item.Path, destination, item.Trim.Start, item.Trim.End, codec, model, snapshot,
-                        (percent, stage) =>
-                        {
-                            Progress.Value = percent * 100;
-                            Status.Text = $"Exportando {i + 1}/{jobs.Length} · {stage}";
-                        }, exportCancellation!.Token);
+                    await ProcessVideo(engine, item.Path, destination, item.Trim.Start, item.Trim.End, codec, model, snapshot, $"Exportando {i + 1}/{jobs.Length}");
                     item.Status = "Concluído";
                     saved++;
                     outputFolder = folder;
@@ -543,7 +550,9 @@ public partial class Editor : Window
         Progress.Value = 0;
         try
         {
-            exportCancellation = new CancellationTokenSource();
+            if (scratch is null)
+                scratch = Directory.CreateTempSubdirectory("VideoNR-").FullName;
+            cancelPath = System.IO.Path.Combine(scratch, $"cancel-{Guid.NewGuid():N}");
             UpdateControls();
             await action();
         }
@@ -551,21 +560,63 @@ public partial class Editor : Window
         catch (Exception error) { Progress.Value = 0; Status.Text = error.Message; }
         finally
         {
-            exportCancellation?.Dispose();
-            exportCancellation = null;
+            if (cancelPath is not null)
+                try { File.Delete(cancelPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            cancelPath = null;
             busy = false;
             UpdateControls();
             if (closePending) Close();
         }
     }
 
+    private async Task ProcessVideo(string engine, string input, string output, double start, double end, string codec,
+        string model, string[] recipe, string activity)
+    {
+        var path = System.IO.Path.Combine(scratch!, "Engine.exe");
+        if (!File.Exists(path))
+        {
+            using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("VideoNR.Engine.exe")
+                ?? throw new InvalidOperationException("Adaptador do motor não encontrado.");
+            var temporary = path + ".tmp";
+            using (var stream = File.Create(temporary)) await resource.CopyToAsync(stream);
+            File.Move(temporary, path, true);
+        }
+        if (CancelRequested) throw new OperationCanceledException();
+
+        var info = new ProcessStartInfo(path) { UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, StandardOutputEncoding = Encoding.UTF8 };
+        foreach (var argument in new[] { engine, input, output, cancelPath!, codec,
+            start.ToString("R", CultureInfo.InvariantCulture), end.ToString("R", CultureInfo.InvariantCulture), model }.Concat(recipe))
+            info.ArgumentList.Add(argument);
+
+        using var process = Process.Start(info) ?? throw new IOException("Não foi possível abrir o motor de exportação.");
+        string? detail = null, worker = null;
+        while (await process.StandardOutput.ReadLineAsync() is { } line)
+        {
+            if (line.StartsWith("PROGRESS ", StringComparison.Ordinal) && int.TryParse(line.AsSpan(9), out var value))
+            {
+                Progress.Value = Math.Clamp(value, 0, 10000);
+                if (!CancelRequested) Status.Text = value == 0 ? $"{activity} · preparando GPU…" : $"{activity} · {Math.Min(99, value / 100)}%";
+            }
+            else if (line.StartsWith("WORKER ", StringComparison.Ordinal)) worker = line[7..];
+            else if (!string.IsNullOrWhiteSpace(line)) detail = line;
+        }
+        await process.WaitForExitAsync();
+        if (process.ExitCode == 3) throw new OperationCanceledException();
+        if (process.ExitCode != 0 || new FileInfo(output) is not { Exists: true, Length: > 0 })
+        {
+            var reason = detail ?? "Confira o codec de entrada e a compatibilidade da GPU.";
+            throw new IOException($"O motor não concluiu o processamento. {reason}" + (worker is null ? "" : $" (tarefa {worker})"));
+        }
+        Progress.Value = 10000;
+    }
+
     private void CancelWork(object sender, RoutedEventArgs e) => RequestCancel();
     private void RequestCancel()
     {
-        if (exportCancellation is null) return;
-        Status.Text = "Cancelando…";
-        CancelButton.IsEnabled = false;
-        exportCancellation.Cancel();
+        if (cancelPath is null) return;
+        try { File.WriteAllText(cancelPath, ""); Status.Text = "Cancelando…"; CancelButton.IsEnabled = false; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status.Text = error.Message; }
     }
 
     private void OpenOutput(object sender, RoutedEventArgs e)
@@ -575,6 +626,42 @@ public partial class Editor : Window
         catch (Win32Exception error) { Status.Text = error.Message; }
     }
 
+    private void FindEngineClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = $"Localizar pacote de processamento {Vendor} 2.2.0" };
+        if (dialog.ShowDialog(this) != true) return;
+        var path = EngineIn(dialog.FolderName, Vendor);
+        if (path is null) { Status.Text = $"Selecione uma pasta com o pacote de processamento {Vendor} 2.2.0."; return; }
+        engines[Vendor] = path;
+        Status.Text = "Motor localizado.";
+        UpdateControls();
+    }
+
+    private static string? FindEngine(string vendor)
+    {
+        var directory = AppContext.BaseDirectory;
+        return EngineIn(System.IO.Path.Combine(directory, "motor"), vendor) ?? EngineIn(directory, vendor);
+    }
+
+    private static string? EngineIn(string root, string vendor)
+    {
+        foreach (var folder in new[] { root, System.IO.Path.Combine(root, "versions", "2.2.0") })
+        {
+            var executable = System.IO.Path.Combine(folder, "veyra_qml_ui.exe");
+            if (!File.Exists(executable)) continue;
+            try
+            {
+                using var manifest = JsonDocument.Parse(File.ReadAllText(System.IO.Path.Combine(folder, "package-manifest.json")));
+                var value = manifest.RootElement;
+                if (value.GetProperty("version").GetString() == "2.2.0"
+                    && value.GetProperty("gpuPackage").GetString()?.Equals(vendor, StringComparison.OrdinalIgnoreCase) == true)
+                    return executable;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException or InvalidOperationException) { }
+        }
+        return null;
+    }
+
     protected override void OnClosing(CancelEventArgs e)
     {
         if (busy) { e.Cancel = true; closePending = true; RequestCancel(); }
@@ -582,6 +669,8 @@ public partial class Editor : Window
         {
             clock.Stop();
             Player.Close();
+            if (scratch is not null)
+                try { Directory.Delete(scratch, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         base.OnClosing(e);
     }

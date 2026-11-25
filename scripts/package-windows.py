@@ -1,73 +1,77 @@
-"""Package the editor and its Windows video and neural processing tools."""
+"""Build offline Windows ZIPs from the published editor and official Veyra packages."""
 
+import argparse
 import hashlib
+import json
 import shutil
 import tempfile
 from pathlib import Path
 from urllib.request import urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
+
+VERSION = "2.2.0"
+PACKAGES = {
+    "NVIDIA": (750110975, "fd1235483a6e36b2520966ec161104478cd93186e97af3b0d78d2dfa7b129932"),
+    "AMD": (748639635, "b383cd4fbc94a6b84e32f36bc8c2758b4c03216c2bd0a2560e3112ba520d6905"),
+}
+DOWNLOAD_BASE = f"https://github.com/Likely7/Veyra-NRVideo/releases/download/v{VERSION}"
 ROOT = Path(__file__).resolve().parents[1]
-FFMPEG = (
-    "https://github.com/GyanD/codexffmpeg/releases/download/9.1/ffmpeg-9.1-essentials_build.zip",
-    119467219,
-    "b9bbbb3acece000cbeec994f856649354e52c773807841e78908374b24d658fd",
-)
-NEURAL = (
-    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip",
-    45474481,
-    "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d",
-)
 
 
-def unpack(work, name, asset):
-    url, size, sha256 = asset
-    path = work / f"{name}.zip"
-    with urlopen(url, timeout=90) as source, path.open("wb") as target:
-        shutil.copyfileobj(source, target, length=1024 * 1024)
-    with path.open("rb") as package:
-        digest = hashlib.file_digest(package, "sha256").hexdigest()
-    print(f"{name} SHA-256: {digest}", flush=True)
-    if path.stat().st_size != size or digest != sha256:
-        raise ValueError(f"Falha na verificação de {name}.")
-    destination = work / name
-    with ZipFile(path) as package:
-        package.extractall(destination)
-    return destination
+def find_engine_root(extracted, vendor):
+    for root in (extracted, *(path for path in extracted.iterdir() if path.is_dir())):
+        for folder in (root, root / "versions" / VERSION):
+            manifest = folder / "package-manifest.json"
+            if not (folder / "veyra_qml_ui.exe").is_file() or not manifest.is_file():
+                continue
+            package = json.loads(manifest.read_text(encoding="utf-8-sig"))
+            if package.get("version") == VERSION and str(package.get("gpuPackage")).upper() == vendor:
+                return root
+    raise ValueError(f"Pacote {vendor} não contém o motor Veyra {VERSION} esperado.")
+
+
+def make_package(vendor, editor, output):
+    size, digest = PACKAGES[vendor]
+    name = f"Veyra-{VERSION}-{vendor}-win64-portable.zip"
+    output.mkdir(parents=True, exist_ok=True)
+    destination = output / f"VideoNR-{vendor}-win64.zip"
+    with tempfile.TemporaryDirectory(dir=output) as scratch:
+        workspace = Path(scratch)
+        archive = workspace / name
+        print(f"Baixando {name}", flush=True)
+        with urlopen(f"{DOWNLOAD_BASE}/{name}", timeout=90) as response, archive.open("wb") as target:
+            shutil.copyfileobj(response, target, length=1024 * 1024)
+        with archive.open("rb") as source:
+            if archive.stat().st_size != size or hashlib.file_digest(source, "sha256").hexdigest() != digest:
+                raise ValueError(f"Falha na verificação do pacote {name}.")
+
+        extracted = workspace / "veyra"
+        with ZipFile(archive) as package:
+            package.extractall(extracted)
+        engine = find_engine_root(extracted, vendor)
+        archive.unlink()
+
+        print(f"Montando {destination.name}", flush=True)
+        staged = workspace / destination.name
+        with ZipFile(staged, "w", compression=ZIP_DEFLATED, compresslevel=1) as package:
+            for folder, prefix in ((editor, Path()), (engine, Path("motor"))):
+                for file in sorted(folder.rglob("*")):
+                    package.write(file, (prefix / file.relative_to(folder)).as_posix())
+            for name in ("LICENSE.txt", "README.md", "DEPENDENCIAS.md"):
+                package.write(ROOT / name, name)
+        staged.replace(destination)
 
 
 def main():
-    editor = ROOT / "build"
-    if not (editor / "VideoNR.exe").is_file():
-        raise ValueError("Compile o editor com Build.ps1 -SelfContained.")
-    output = ROOT / "dist"
-    output.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=output) as temp:
-        work = Path(temp)
-        ffmpeg = unpack(work, "ffmpeg", FFMPEG)
-        ffmpeg_bin = next(ffmpeg.rglob("ffmpeg.exe")).parent
-        real = unpack(work, "realesrgan", NEURAL)
-        real_root = next(real.rglob("realesrgan-ncnn-vulkan.exe")).parent
-        for file in ("realesrgan-x4plus-anime.param", "realesrgan-x4plus-anime.bin",
-                     "realesrgan-x4plus.param", "realesrgan-x4plus.bin"):
-            if not (real_root / "models" / file).is_file():
-                raise ValueError(f"Modelo ausente no pacote neural: {file}")
-        motor = work / "motor"
-        shutil.copytree(real_root, motor)
-        for file in ("ffmpeg.exe", "ffprobe.exe"):
-            shutil.copy2(ffmpeg_bin / file, motor / file)
-        for pattern in ("[Ll][Ii][Cc][Ee][Nn][Ss][Ee]*", "README.txt"):
-            for notice in ffmpeg_bin.parent.glob(pattern):
-                if notice.is_file():
-                    shutil.copy2(notice, motor / f"FFmpeg-{notice.name}")
-        staged = work / "VideoNR-win64.zip"
-        with ZipFile(staged, "w", compression=ZIP_DEFLATED, compresslevel=1) as package:
-            for folder, prefix in ((editor, Path()), (motor, Path("motor"))):
-                for file in sorted(folder.rglob("*")):
-                    package.write(file, (prefix / file.relative_to(folder)).as_posix())
-            for name in ("README.md", "DEPENDENCIAS.md", "LICENSE.txt"):
-                package.write(ROOT / name, name)
-        staged.replace(output / staged.name)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--editor", type=Path, default=ROOT / "build")
+    parser.add_argument("--output", type=Path, default=ROOT / "dist")
+    args = parser.parse_args()
+    if not (args.editor / "VideoNR.exe").is_file():
+        parser.error("Compile o editor com Build.ps1 -SelfContained antes de empacotar.")
+    for vendor in PACKAGES:
+        make_package(vendor, args.editor, args.output)
 
 
 if __name__ == "__main__":
