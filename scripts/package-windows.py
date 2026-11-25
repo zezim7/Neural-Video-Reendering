@@ -68,8 +68,8 @@ def main():
     parser.add_argument("--editor", type=Path, default=ROOT / "build")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
-    if not (args.editor / "VideoNR.exe").is_file():
-        parser.error("Compile o editor com Build.ps1 -SelfContained antes de empacotar.")
+    if not (args.editor / "VideoNR.exe").is_file() or not (args.editor / "Engine.exe").is_file():
+        parser.error("Compile o editor e o adaptador com Build.ps1 -SelfContained antes de empacotar.")
     for vendor in PACKAGES:
         make_package(vendor, args.editor, args.output)
 

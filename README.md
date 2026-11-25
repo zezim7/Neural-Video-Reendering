@@ -27,10 +27,12 @@ Windows 11 x64 e uma GPU compatível com o pacote escolhido.
 
 Os modos AMD exigem o runtime HIP e ainda precisam de teste em uma Radeon neste editor.
 
-## Compilar
+## Compilar e testar
 
-Use o SDK .NET 8 e um compilador g++ MinGW-w64 x64 com C++20. Execute `./Build.ps1 -Compiler caminho/para/g++.exe`. O executável fica em `build/VideoNR.exe`.
+Use o SDK .NET 8 e MSVC x64 (`cl.exe`, recomendado via Developer PowerShell do Visual Studio) ou um compilador `g++` MinGW-w64 x64 com C++20.
 
-Para montar os ZIPs completos, execute `./Build.ps1 -SelfContained` no Windows e depois `python scripts/package-windows.py` com Python 3.11 ou superior. Os ZIPs ficam em `dist/`.
+- Testes unitários: `dotnet run --project Tests/VideoNR.Tests.csproj`
+- Compilar: `./Build.ps1` (ou `./Build.ps1 -Compiler caminho/para/g++.exe`). Os executáveis ficam em `build/VideoNR.exe` e `build/Engine.exe`.
+- Empacotar os ZIPs completos: `./Build.ps1 -SelfContained` no Windows e depois `python scripts/package-windows.py` com Python 3.11 ou superior. Os ZIPs ficam em `dist/`.
 
 O código é distribuído sob [GPL-3.0](LICENSE.txt).

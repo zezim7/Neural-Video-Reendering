@@ -1,0 +1,21 @@
+# Build outputs
+Engine.exe
+build/
+dist/
+App/bin/
+App/obj/
+Tests/bin/
+Tests/obj/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.cache
+*.log

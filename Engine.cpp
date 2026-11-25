@@ -1,8 +1,14 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <locale>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "veyra/engine/ExportFeaturePolicy.h"
@@ -11,6 +17,7 @@
 namespace {
 using namespace veyra::engine;
 constexpr unsigned MaxParts = 4;
+
 struct Job {
     DWORD signature = 0x56585931, version = 15, bytes = sizeof(Job);
     EnhancementSettings settings;
@@ -32,21 +39,30 @@ struct Job {
 };
 
 struct Handle {
-    HANDLE value;
+    HANDLE value = nullptr;
     ~Handle() { if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value); }
 };
 
 void print(const std::wstring& value) {
     const int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (!size) return;
-    std::string line(size, '\0');
+    if (size <= 0) return;
+    std::string line(static_cast<size_t>(size), '\0');
     WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, line.data(), size, nullptr, nullptr);
     std::puts(line.c_str());
     std::fflush(stdout);
 }
 
+bool cancelSignaledOnStdin(HANDLE stdinHandle) {
+    if (!stdinHandle || stdinHandle == INVALID_HANDLE_VALUE) return false;
+    if (GetFileType(stdinHandle) != FILE_TYPE_PIPE) return false;
+    DWORD available = 0;
+    if (!PeekNamedPipe(stdinHandle, nullptr, 0, nullptr, &available, nullptr))
+        return true; // Parent closed stdin or exited unexpectedly.
+    return available > 0;
+}
+
 int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
-        const wchar_t* cancelFile, NrRuntime runtime, const std::vector<NrLayerSettings>& layers,
+        NrRuntime runtime, const std::vector<NrLayerSettings>& layers,
         bool hevc, unsigned maxFrames, double start, double end) {
     const std::wstring temporary = std::wstring(output) + L".processing-" + std::to_wstring(GetCurrentProcessId());
     if (wcslen(input) >= 32768 || temporary.size() >= 32768 || GetFileAttributesW(output) != INVALID_FILE_ATTRIBUTES) {
@@ -59,7 +75,7 @@ int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
     if (!mapping.value) return 1;
     auto* shared = static_cast<Job*>(MapViewOfFile(mapping.value, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Job)));
     if (!shared) return 1;
-    new(shared) Job{};
+    new (shared) Job{};
     auto& job = *shared;
     job.settings.nr = !layers.empty();
     job.settings.nrRuntime = runtime;
@@ -71,11 +87,12 @@ int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
     job.maxFrames = maxFrames;
     job.trimStartSeconds = start;
     job.trimEndSeconds = end;
-    job.hevc = hevc;
+    job.hevc = hevc ? 1u : 0u;
     job.media.audio.policy = ExportTrackPolicy::All;
     wcscpy_s(job.input, input);
     wcscpy_s(job.output, output);
     wcscpy_s(job.temporary, temporary.c_str());
+
     Handle partial{CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr)};
     if (partial.value == INVALID_HANDLE_VALUE) {
         UnmapViewOfFile(shared);
@@ -95,17 +112,19 @@ int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
     std::wstring command = L"\"" + std::wstring(engine) + L"\" --export-worker "
         + std::to_wstring(reinterpret_cast<uintptr_t>(mapping.value));
     const auto directory = std::filesystem::path(engine).parent_path();
-    const bool initialized = InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeBytes);
+    const bool initialized = InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeBytes) != FALSE;
     const bool launched = initialized
         && UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-            &mapping.value, sizeof(HANDLE), nullptr, nullptr)
+            &mapping.value, sizeof(HANDLE), nullptr, nullptr) != FALSE
         && CreateProcessW(engine, command.data(), nullptr, nullptr, TRUE,
             EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, nullptr, directory.c_str(),
-            &startup.StartupInfo, &process);
+            &startup.StartupInfo, &process) != FALSE;
     if (initialized) DeleteProcThreadAttributeList(startup.lpAttributeList);
+
     DWORD code = 1;
     if (launched) {
         Handle worker{process.hProcess}, thread{process.hThread};
+        const HANDLE stdinHandle = GetStdHandle(STD_INPUT_HANDLE);
         print(L"WORKER " + std::to_wstring(process.dwProcessId));
         LONG last = -1;
         ULONGLONG cancelledAt = 0;
@@ -115,11 +134,13 @@ int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
                 print(L"PROGRESS " + std::to_wstring(progress));
                 last = progress;
             }
-            if (!cancelledAt && GetFileAttributesW(cancelFile) != INVALID_FILE_ATTRIBUTES) {
+            if (!cancelledAt && cancelSignaledOnStdin(stdinHandle)) {
                 InterlockedExchange(&job.cancel, 1);
                 cancelledAt = GetTickCount64();
             }
-            if (cancelledAt && GetTickCount64() - cancelledAt > 5000) TerminateProcess(worker.value, 3);
+            if (cancelledAt && GetTickCount64() - cancelledAt > 5000) {
+                TerminateProcess(worker.value, 3);
+            }
         }
         GetExitCodeProcess(worker.value, &code);
         if (code != 0 && job.message[0]) print(job.message);
@@ -131,31 +152,38 @@ int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
     DeleteFileW(temporary.c_str());
     return code == 0 ? 0 : code == 3 ? 3 : 1;
 }
-}
+} // namespace
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc < 9 || argc > 9 + kMaxNrInstances) return 2;
+    if (argc < 8 || argc > 8 + static_cast<int>(kMaxNrInstances)) return 2;
     try {
         auto readTime = [](const wchar_t* value) {
             std::wistringstream stream(value);
             stream.imbue(std::locale::classic());
-            double seconds;
+            double seconds = 0;
             if (!(stream >> seconds) || !stream.eof() || !std::isfinite(seconds) || seconds < 0)
                 throw std::invalid_argument("Invalid time");
             return seconds;
         };
-        const std::wstring model = argv[8];
+        const std::wstring codec = argv[4];
+        if (codec != L"h264" && codec != L"hevc")
+            throw std::invalid_argument("Invalid codec");
+        const double start = readTime(argv[5]);
+        const double end = readTime(argv[6]);
+        if (end > 0 && end <= start)
+            throw std::invalid_argument("Invalid trim range");
+        const std::wstring model = argv[7];
         if (model != L"original" && model != L"sf-performance" && model != L"sf-legacy"
             && model != L"amd-small" && model != L"amd-original")
             throw std::invalid_argument("Invalid model");
         const auto runtime = model.starts_with(L"amd-") ? NrRuntime::LmxxfAmd
             : model == L"original" ? NrRuntime::NvidiaOriginal : NrRuntime::Ampere;
         std::vector<NrLayerSettings> layers;
-        for (int index = 9; index < argc; ++index) {
+        for (int index = 8; index < argc; ++index) {
             std::wistringstream stream(argv[index]);
             stream.imbue(std::locale::classic());
             NrLayerSettings layer;
-            int policy;
+            int policy = 0;
             if (!(stream >> policy >> layer.model.intensity >> layer.model.tone >> layer.model.structure) || !stream.eof())
                 throw std::invalid_argument("Invalid layer");
             layer.runtime = runtime;
@@ -164,8 +192,7 @@ int wmain(int argc, wchar_t** argv) {
             layer.sizePolicy = static_cast<veyra::pipeline::NrSizePolicy>(policy);
             layers.push_back(layer);
         }
-        return run(argv[1], argv[2], argv[3], argv[4], runtime, layers,
-            wcscmp(argv[5], L"hevc") == 0, 0, readTime(argv[6]), readTime(argv[7]));
+        return run(argv[1], argv[2], argv[3], runtime, layers, codec == L"hevc", 0, start, end);
     } catch (const std::exception&) {
         print(L"Falha ao preparar o processamento.");
         return 1;

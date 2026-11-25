@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace VideoNR;
+namespace VideoNR.Models;
 
 internal readonly record struct TrimSelection(double Start, double End)
 {
@@ -19,15 +19,17 @@ internal readonly record struct TrimSelection(double Start, double End)
 
     internal static string Format(double seconds, bool milliseconds = false)
     {
-        var time = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        var safeSeconds = double.IsFinite(seconds) ? Math.Max(0, seconds) : 0;
+        var time = TimeSpan.FromSeconds(safeSeconds);
         var hours = (long)time.TotalHours;
         var baseTime = FormattableString.Invariant($"{hours:00}:{time.Minutes:00}:{time.Seconds:00}");
         return milliseconds ? FormattableString.Invariant($"{baseTime}.{time.Milliseconds:000}") : baseTime;
     }
 
-    internal static bool TryParse(string text, out double seconds)
+    internal static bool TryParse(string? text, out double seconds)
     {
         seconds = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
         var parts = text.Trim().Replace(',', '.').Split(':');
         if (parts.Length > 3 ||
             !double.TryParse(parts[^1], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var tail) ||
