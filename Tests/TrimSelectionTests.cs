@@ -134,6 +134,27 @@ try
 
     AssertEqual(veyraExe, EngineLocator.FindBundledEngine("NVIDIA", tempDir), "FindBundledEngine finds NVIDIA");
     AssertEqual<string?>(null, EngineLocator.FindBundledEngine("AMD", tempDir), "FindBundledEngine rejects wrong vendor");
+
+    // --- SettingsStore ---
+    var settingsFile = Path.Combine(tempDir, "prefs", "settings.json");
+    var toSave = new UserSettings(
+        NrEnabled: false,
+        ModelTag: "sf-performance",
+        CodecIndex: 1,
+        Layers: SettingsStore.FromNrLayers([layer]),
+        CustomEngines: new Dictionary<string, string> { ["NVIDIA"] = tempDir });
+    SettingsStore.Save(toSave, settingsFile);
+    var loaded = SettingsStore.Load(settingsFile);
+    AssertEqual(false, loaded.NrEnabled, "SettingsStore NrEnabled");
+    AssertEqual("sf-performance", loaded.ModelTag, "SettingsStore ModelTag");
+    AssertEqual(1, loaded.CodecIndex, "SettingsStore CodecIndex");
+    var restoredLayers = SettingsStore.ToNrLayers(loaded, 4);
+    AssertEqual(1, restoredLayers.Count, "SettingsStore layers count");
+    AssertEqual(layer.Encode(), restoredLayers[0].Encode(), "SettingsStore layer encoding preserved");
+
+    File.WriteAllText(settingsFile, "{ invalid json");
+    var fallback = SettingsStore.Load(settingsFile);
+    AssertEqual(true, fallback.NrEnabled, "SettingsStore corrupt JSON falls back to defaults");
 }
 finally
 {

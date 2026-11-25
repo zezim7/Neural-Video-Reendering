@@ -3,6 +3,9 @@
         Width="1360" Height="820" MinWidth="940" MinHeight="610" WindowState="Maximized"
         WindowStartupLocation="CenterScreen" Background="{DynamicResource Canvas}" Foreground="{DynamicResource Text}"
         FontFamily="Segoe UI" FontSize="13" PreviewKeyDown="EditorKeyDown" AllowDrop="True" Drop="DropFiles">
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo x:Name="TaskbarInfo"/>
+    </Window.TaskbarItemInfo>
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
         <SolidColorBrush x:Key="Canvas" Color="#0C1724"/>
@@ -250,6 +253,7 @@
         <Style TargetType="Slider">
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="IsMoveToPointEnabled" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
@@ -259,7 +263,9 @@
                                     <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
-                                                <Border Height="4" CornerRadius="2,0,0,2" Background="{StaticResource Accent}" VerticalAlignment="Center"/>
+                                                <Grid Background="Transparent" Height="20">
+                                                    <Border Height="4" CornerRadius="2,0,0,2" Background="{StaticResource Accent}" VerticalAlignment="Center"/>
+                                                </Grid>
                                             </ControlTemplate>
                                         </RepeatButton.Template>
                                     </RepeatButton>
@@ -268,7 +274,9 @@
                                     <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
-                                                <Border Height="4" CornerRadius="0,2,2,0" Background="{StaticResource SwitchOff}" VerticalAlignment="Center"/>
+                                                <Grid Background="Transparent" Height="20">
+                                                    <Border Height="4" CornerRadius="0,2,2,0" Background="{StaticResource SwitchOff}" VerticalAlignment="Center"/>
+                                                </Grid>
                                             </ControlTemplate>
                                         </RepeatButton.Template>
                                     </RepeatButton>
@@ -339,6 +347,36 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="MinWidth" Value="0"/>
+                    <Setter Property="Height" Value="8"/>
+                    <Setter Property="MinHeight" Value="8"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ScrollBar">
+                                <Track x:Name="PART_Track" IsDirectionReversed="False" Margin="2,1">
+                                    <Track.Thumb>
+                                        <Thumb>
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Border x:Name="Bar" Background="{StaticResource Line}" CornerRadius="3"/>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Bar" Property="Background" Value="{StaticResource Muted}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style x:Key="Switch" TargetType="CheckBox">
@@ -503,7 +541,8 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <Border Background="{StaticResource Preview}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+                <Border Background="{StaticResource Preview}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True"
+                        MouseLeftButtonUp="PreviewClick">
                     <Grid Margin="1">
                         <MediaElement x:Name="Player" LoadedBehavior="Manual" UnloadedBehavior="Close" Stretch="Uniform" ScrubbingEnabled="True"
                                       MediaOpened="MediaReady" MediaFailed="MediaFailure" MediaEnded="MediaFinished"/>
@@ -536,7 +575,8 @@
                             </Canvas>
                         </Border>
                         <WrapPanel Margin="0,10,0,0" VerticalAlignment="Center">
-                            <Button x:Name="PlayButton" Content="Reproduzir" Click="PlayClick" Padding="11,5" Margin="0,0,8,4" ToolTip="Reproduzir ou pausar (Espaço)"/>
+                            <Button x:Name="PlayButton" Content="Reproduzir" Click="PlayClick" Padding="11,5" Margin="0,0,4,4" ToolTip="Reproduzir ou pausar (Espaço)"/>
+                            <Button x:Name="MuteButton" Content="Som" Click="MuteClick" Padding="8,5" Margin="0,0,8,4" ToolTip="Silenciar ou ativar áudio (M)"/>
                             <Button x:Name="MarkStartButton" Content="[ Início" Click="MarkStartClick" Padding="8,5" Margin="0,0,4,4" ToolTip="Marcar início no ponto atual (I)"/>
                             <Button x:Name="MarkEndButton" Content="Fim ]" Click="MarkEndClick" Padding="8,5" Margin="0,0,10,4" ToolTip="Marcar fim no ponto atual (O)"/>
                             <TextBox x:Name="StartTime" Tag="start" Style="{StaticResource TimecodeBox}" AutomationProperties.Name="Início do corte"
@@ -566,13 +606,7 @@
                             </DockPanel>
                             <TextBlock x:Name="LayerSummary" Text="1 camada ativa" Style="{StaticResource Secondary}" Margin="0,4,0,12"/>
                             <TextBlock Text="Versão do NR" Style="{StaticResource Secondary}" FontSize="12" Margin="0,0,0,5"/>
-                            <ComboBox x:Name="NrVersion" SelectionChanged="ChangeVersion" Margin="0,0,0,12" AutomationProperties.Name="Versão do NR">
-                                <ComboBoxItem Content="NVIDIA original · RTX 50" Tag="original"/>
-                                <ComboBoxItem Content="SF310.9.16 desempenho · RTX 20–50" Tag="sf-performance"/>
-                                <ComboBoxItem Content="SF310.9.16 legado · RTX 20–50" Tag="sf-legacy"/>
-                                <ComboBoxItem Content="AMD Small · RX 7000 / 9000" Tag="amd-small"/>
-                                <ComboBoxItem Content="AMD Original · RX 7000 / 9000" Tag="amd-original"/>
-                            </ComboBox>
+                            <ComboBox x:Name="NrVersion" DisplayMemberPath="Label" SelectionChanged="ChangeVersion" Margin="0,0,0,12" AutomationProperties.Name="Versão do NR"/>
                         </StackPanel>
                         <Button x:Name="AddLayerButton" DockPanel.Dock="Bottom" Content="+ Adicionar camada NR" Click="AddLayerClick" Margin="0,10,0,0"/>
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">

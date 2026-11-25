@@ -120,7 +120,7 @@ internal sealed class VideoExporter
         }
         catch
         {
-            if (replaceExisting) TryDeleteFile(exportTarget);
+            TryDeleteFile(exportTarget);
             throw;
         }
     }

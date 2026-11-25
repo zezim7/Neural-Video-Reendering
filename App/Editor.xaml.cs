@@ -2,10 +2,13 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using VideoNR.Models;
@@ -16,11 +19,16 @@ namespace VideoNR;
 public partial class Editor : Window
 {
     private const int LayerLimit = 4;
-    private const string VideoFilter = "Vídeos|*.mp4;*.mkv;*.mov;*.webm;*.avi;*.m4v;*.mts;*.m2ts|Todos os arquivos|*.*";
+    private const string VideoFilter = "Vídeos|*.mp4;*.mkv;*.mov;*.webm;*.avi;*.m4v;*.mts;*.m2ts;*.wmv;*.flv;*.ts|Todos os arquivos|*.*";
+    private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".mts", ".m2ts", ".wmv", ".flv", ".ts"
+    };
 
     private readonly ObservableCollection<ClipItem> clips = [];
-    private readonly ObservableCollection<NrLayer> layers = [new()];
+    private readonly ObservableCollection<NrLayer> layers = [];
     private readonly Dictionary<string, string> engines = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> customEngines = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly VideoExporter exporter = new();
     private readonly List<string> exportErrors = [];
@@ -33,29 +41,69 @@ public partial class Editor : Window
     private bool busy, playing, ready, scrubbing, refreshingFields, closePending;
     private double position, trimPointerOffset;
 
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
+
     public Editor()
     {
         InitializeComponent();
         Queue.ItemsSource = clips;
         LayerCards.ItemsSource = layers;
-        NrVersion.SelectedIndex = 0;
+        NrVersion.ItemsSource = NrLayer.Models;
+
+        var saved = SettingsStore.Load();
+        NrSwitch.IsChecked = saved.NrEnabled;
+        Codec.SelectedIndex = Math.Clamp(saved.CodecIndex, 0, Math.Max(0, Codec.Items.Count - 1));
+        foreach (var layer in SettingsStore.ToNrLayers(saved, LayerLimit))
+            layers.Add(layer);
 
         adapterPath = EngineLocator.FindAdapter();
         foreach (var vendor in new[] { "NVIDIA", "AMD" })
-            if (EngineLocator.FindBundledEngine(vendor) is { } path)
-                engines[vendor] = path;
-        if (!engines.ContainsKey("NVIDIA") && engines.ContainsKey("AMD"))
-            NrVersion.SelectedIndex = 3;
+        {
+            if (EngineLocator.FindBundledEngine(vendor) is { } bundled)
+                engines[vendor] = bundled;
+            else if (saved.CustomEngines is not null
+                && saved.CustomEngines.TryGetValue(vendor, out var customRoot)
+                && EngineLocator.FindEngineIn(customRoot, vendor) is { } custom)
+            {
+                engines[vendor] = custom;
+                customEngines[vendor] = customRoot;
+            }
+        }
+
+        var savedModelIndex = Array.FindIndex(NrLayer.Models, m => m.Tag == saved.ModelTag);
+        if (savedModelIndex >= 0)
+            NrVersion.SelectedIndex = savedModelIndex;
+        else if (!engines.ContainsKey("NVIDIA") && engines.ContainsKey("AMD"))
+            NrVersion.SelectedIndex = Array.FindIndex(NrLayer.Models, m => m.Vendor == "AMD");
+        else
+            NrVersion.SelectedIndex = 0;
 
         ReindexLayers();
         RefreshTrimFields();
         UpdateControls();
         clock.Tick += (_, _) => UpdateClock();
-        Loaded += (_, _) => AddPaths(Environment.GetCommandLineArgs().Skip(1));
+        Loaded += (_, _) => AddPaths(Environment.GetCommandLineArgs().Skip(1), filterExtensions: false);
     }
 
-    private string Model => (NrVersion.SelectedItem as ComboBoxItem)?.Tag as string ?? "original";
-    private string Vendor => Model.StartsWith("amd-", StringComparison.Ordinal) ? "AMD" : "NVIDIA";
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            var dark = 1;
+            if (DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int)) != 0)
+                DwmSetWindowAttribute(handle, 19, ref dark, sizeof(int));
+        }
+        catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException)
+        {
+        }
+    }
+
+    private NrModelOption SelectedModel => NrVersion.SelectedItem as NrModelOption ?? NrLayer.Models[0];
+    private string Model => SelectedModel.Tag;
+    private string Vendor => SelectedModel.Vendor;
     private string? EnginePath => engines.GetValueOrDefault(Vendor);
     private int ActiveCount => NrSwitch.IsChecked == true ? layers.Count(l => l.Enabled) : 0;
     private bool CancelRequested => exportCancellation?.IsCancellationRequested == true;
@@ -100,6 +148,7 @@ public partial class Editor : Window
             _ => $"{ActiveCount} camadas em sequência"
         };
         PlayButton.IsEnabled = ready;
+        MuteButton.IsEnabled = ready;
         TrimTrack.IsEnabled = ready && clip?.Duration > 0;
         StartHandle.IsEnabled = EndHandle.IsEnabled = StartTime.IsEnabled = EndTime.IsEnabled
             = MarkStartButton.IsEnabled = MarkEndButton.IsEnabled
@@ -155,18 +204,44 @@ public partial class Editor : Window
     private void AddFiles(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog { Title = "Adicionar vídeos", Filter = VideoFilter, Multiselect = true };
-        if (dialog.ShowDialog(this) == true) AddPaths(dialog.FileNames);
+        if (dialog.ShowDialog(this) == true) AddPaths(dialog.FileNames, filterExtensions: false);
     }
 
     private void DropFiles(object sender, DragEventArgs e)
     {
-        if (!busy && e.Data.GetData(DataFormats.FileDrop) is string[] paths) AddPaths(paths);
+        if (!busy && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+            AddPaths(paths, filterExtensions: true);
     }
 
-    private void AddPaths(IEnumerable<string> paths)
+    private void AddPaths(IEnumerable<string> paths, bool filterExtensions)
     {
+        var candidates = new List<string>();
+        var skipped = 0;
+        foreach (var raw in paths)
+        {
+            if (Directory.Exists(raw))
+            {
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(raw))
+                    {
+                        if (VideoExtensions.Contains(Path.GetExtension(file)))
+                            candidates.Add(file);
+                    }
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            }
+            else if (File.Exists(raw))
+            {
+                if (!filterExtensions || VideoExtensions.Contains(Path.GetExtension(raw)))
+                    candidates.Add(raw);
+                else
+                    skipped++;
+            }
+        }
+
         ClipItem? first = null;
-        foreach (var path in paths.Where(File.Exists).Select(Path.GetFullPath))
+        foreach (var path in candidates.Select(Path.GetFullPath))
         {
             if (clips.Any(c => c.Path.Equals(path, StringComparison.OrdinalIgnoreCase))) continue;
             var item = new ClipItem(path);
@@ -176,7 +251,13 @@ public partial class Editor : Window
         if (first is not null)
         {
             Queue.SelectedItem = first;
-            Status.Text = "Ajuste as camadas ou marque um trecho na linha do tempo.";
+            Status.Text = skipped > 0
+                ? $"Vídeos adicionados ({skipped} arquivo(s) ignorado(s) por não serem vídeo)."
+                : "Ajuste as camadas ou marque um trecho na linha do tempo.";
+        }
+        else if (skipped > 0)
+        {
+            Status.Text = "Nenhum vídeo compatível encontrado nos arquivos soltos.";
         }
         UpdateControls();
     }
@@ -295,6 +376,15 @@ public partial class Editor : Window
 
     private void MediaFinished(object sender, RoutedEventArgs e) => Pause();
     private void PlayClick(object sender, RoutedEventArgs e) => TogglePlayback();
+    private void PreviewClick(object sender, MouseButtonEventArgs e) => TogglePlayback();
+    private void MuteClick(object sender, RoutedEventArgs e) => ToggleMute();
+
+    private void ToggleMute()
+    {
+        if (!ready) return;
+        Player.IsMuted = !Player.IsMuted;
+        MuteButton.Content = Player.IsMuted ? "Mudo" : "Som";
+    }
 
     private void TogglePlayback()
     {
@@ -446,14 +536,26 @@ public partial class Editor : Window
     private void EditorKeyDown(object sender, KeyEventArgs e)
     {
         if (e.OriginalSource is TextBoxBase or ComboBox) return;
-        if (!ready) return;
 
         var modifiers = Keyboard.Modifiers;
+        if (modifiers == ModifierKeys.None && e.Key == Key.Delete && !busy && clip is not null)
+        {
+            RemoveSelected(sender, e);
+            e.Handled = true;
+            return;
+        }
+        if (!ready) return;
+
         if (modifiers == ModifierKeys.None)
         {
             if (e.Key == Key.Space && e.OriginalSource is not ButtonBase and not ListBoxItem)
             {
                 TogglePlayback();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.M)
+            {
+                ToggleMute();
                 e.Handled = true;
             }
             else if (e.Key == Key.I && !busy)
@@ -551,6 +653,8 @@ public partial class Editor : Window
                     await exporter.ExportAsync(request, value =>
                     {
                         Progress.Value = value;
+                        TaskbarInfo.ProgressState = TaskbarItemProgressState.Normal;
+                        TaskbarInfo.ProgressValue = Math.Clamp((i + value / 10000.0) / jobs.Length, 0, 1);
                         if (!CancelRequested)
                             Status.Text = value == 0
                                 ? $"{activity} · preparando GPU…"
@@ -585,6 +689,8 @@ public partial class Editor : Window
         exportErrors.Clear();
         Status.Text = message;
         Progress.Value = 0;
+        TaskbarInfo.ProgressState = TaskbarItemProgressState.Indeterminate;
+        TaskbarInfo.ProgressValue = 0;
         exportCancellation = new CancellationTokenSource();
         UpdateControls();
         try
@@ -603,6 +709,8 @@ public partial class Editor : Window
         }
         finally
         {
+            TaskbarInfo.ProgressState = TaskbarItemProgressState.None;
+            TaskbarInfo.ProgressValue = 0;
             exportCancellation.Dispose();
             exportCancellation = null;
             busy = false;
@@ -639,8 +747,20 @@ public partial class Editor : Window
             return;
         }
         engines[Vendor] = path;
+        customEngines[Vendor] = dialog.FolderName;
         Status.Text = "Motor localizado.";
         UpdateControls();
+    }
+
+    private void SavePreferences()
+    {
+        var settings = new UserSettings(
+            NrEnabled: NrSwitch.IsChecked == true,
+            ModelTag: Model,
+            CodecIndex: Codec.SelectedIndex,
+            Layers: SettingsStore.FromNrLayers(layers),
+            CustomEngines: customEngines.Count > 0 ? new Dictionary<string, string>(customEngines) : null);
+        SettingsStore.Save(settings);
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -653,6 +773,7 @@ public partial class Editor : Window
         }
         else
         {
+            SavePreferences();
             clock.Stop();
             Player.Close();
         }
