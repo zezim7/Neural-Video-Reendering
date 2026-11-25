@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Shell;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -20,6 +21,8 @@ public partial class Editor : Window
 {
     private const int LayerLimit = 4;
     private const string VideoFilter = "Vídeos|*.mp4;*.mkv;*.mov;*.webm;*.avi;*.m4v;*.mts;*.m2ts;*.wmv;*.flv;*.ts|Todos os arquivos|*.*";
+    private static readonly Geometry PlayIconGeometry = Geometry.Parse("M 2 1 L 10 6 L 2 11 Z");
+    private static readonly Geometry PauseIconGeometry = Geometry.Parse("M 2 1 H 5 V 11 H 2 Z M 7 1 H 10 V 11 H 7 Z");
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".mts", ".m2ts", ".wmv", ".flv", ".ts"
@@ -53,7 +56,8 @@ public partial class Editor : Window
 
         var saved = SettingsStore.Load();
         NrSwitch.IsChecked = saved.NrEnabled;
-        Codec.SelectedIndex = Math.Clamp(saved.CodecIndex, 0, Math.Max(0, Codec.Items.Count - 1));
+        if (saved.CodecIndex == 1) HevcRadio.IsChecked = true;
+        else H264Radio.IsChecked = true;
         foreach (var layer in SettingsStore.ToNrLayers(saved, LayerLimit))
             layers.Add(layer);
 
@@ -123,22 +127,29 @@ public partial class Editor : Window
         QueueTitle.Text = $"Fila · {clips.Count}";
         EmptyQueue.Visibility = clips.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Queue.IsEnabled = !busy;
-        AddButton.IsEnabled = EngineButton.IsEnabled = NrSwitch.IsEnabled = NrVersion.IsEnabled = LayerCards.IsEnabled = Codec.IsEnabled = !busy;
+        AddButton.IsEnabled = EmptyOpenButton.IsEnabled = EngineButton.IsEnabled = NrSwitch.IsEnabled
+            = NrVersion.IsEnabled = LayerCards.IsEnabled = H264Radio.IsEnabled = HevcRadio.IsEnabled = !busy;
         RemoveButton.IsEnabled = !busy && clip is not null;
         ClearButton.IsEnabled = !busy && clips.Count > 0;
         AddLayerButton.IsEnabled = !busy && layers.Count < LayerLimit;
 
         if (adapterPath is null)
         {
+            EngineDot.Fill = (Brush)FindResource("WarnDot");
             EngineButton.Visibility = Visibility.Collapsed;
-            EngineLabel.Text = "Adaptador Engine.exe não encontrado";
+            EngineLabel.Text = "Engine.exe não encontrado";
+        }
+        else if (EnginePath is null)
+        {
+            EngineDot.Fill = (Brush)FindResource("WarnDot");
+            EngineButton.Visibility = Visibility.Visible;
+            EngineLabel.Text = $"Pacote {Vendor} ausente";
         }
         else
         {
-            EngineButton.Visibility = EnginePath is null ? Visibility.Visible : Visibility.Collapsed;
-            EngineLabel.Text = EnginePath is null
-                ? $"Motor de NR · pacote {Vendor} não localizado"
-                : $"Motor de NR · {Vendor}";
+            EngineDot.Fill = (Brush)FindResource("SuccessDot");
+            EngineButton.Visibility = Visibility.Collapsed;
+            EngineLabel.Text = $"{Vendor} pronto";
         }
 
         LayerSummary.Text = ActiveCount switch
@@ -183,7 +194,7 @@ public partial class Editor : Window
     private void DrawPosition()
     {
         var duration = clip?.Duration ?? 0;
-        Canvas.SetLeft(Playhead, duration > 0 ? TimeToTrack(position, duration) - 1 : 0);
+        Canvas.SetLeft(Playhead, duration > 0 ? TimeToTrack(position, duration) - 5 : 0);
         TimeLabel.Text = $"{TrimSelection.Format(position)} / {TrimSelection.Format(duration)}";
     }
 
@@ -342,8 +353,11 @@ public partial class Editor : Window
         Player.Source = target is null ? null : new Uri(target.Path, UriKind.Absolute);
         VideoTag.Visibility = Visibility.Collapsed;
         VideoPlaceholder.Visibility = Visibility.Visible;
-        VideoMessage.Text = target is null ? "Abra um vídeo para visualizar" : "Carregando vídeo…";
-        PlayButton.Content = "Reproduzir";
+        VideoMessage.Text = target is null ? "Abra um vídeo para começar" : "Carregando vídeo…";
+        VideoSubMessage.Text = target is null ? "Arraste arquivos ou pastas para esta janela" : "Preparando visualização…";
+        EmptyOpenButton.Visibility = target is null ? Visibility.Visible : Visibility.Collapsed;
+        PlayLabel.Text = "Reproduzir";
+        PlayIcon.Data = PlayIconGeometry;
         if (target is not null) { Player.Play(); Player.Pause(); }
         DrawPosition();
     }
@@ -371,6 +385,8 @@ public partial class Editor : Window
         VideoTag.Visibility = Visibility.Collapsed;
         VideoPlaceholder.Visibility = Visibility.Visible;
         VideoMessage.Text = "O Windows não conseguiu reproduzir este vídeo.";
+        VideoSubMessage.Text = "Você ainda pode exportá-lo normalmente pela fila.";
+        EmptyOpenButton.Visibility = Visibility.Collapsed;
         UpdateControls();
     }
 
@@ -383,7 +399,7 @@ public partial class Editor : Window
     {
         if (!ready) return;
         Player.IsMuted = !Player.IsMuted;
-        MuteButton.Content = Player.IsMuted ? "Mudo" : "Som";
+        MuteLabel.Text = Player.IsMuted ? "Mudo" : "Som";
     }
 
     private void TogglePlayback()
@@ -398,7 +414,8 @@ public partial class Editor : Window
             Player.Play();
             playing = true;
             clock.Start();
-            PlayButton.Content = "Pausar";
+            PlayLabel.Text = "Pausar";
+            PlayIcon.Data = PauseIconGeometry;
         }
     }
 
@@ -407,7 +424,8 @@ public partial class Editor : Window
         clock.Stop();
         if (ready) Player.Pause();
         playing = false;
-        PlayButton.Content = "Reproduzir";
+        PlayLabel.Text = "Reproduzir";
+        PlayIcon.Data = PlayIconGeometry;
     }
 
     private void UpdateClock()
@@ -629,7 +647,7 @@ public partial class Editor : Window
 
         Pause();
         var encodedLayers = EncodeActiveLayers();
-        var codec = Codec.SelectedIndex == 0 ? "h264" : "hevc";
+        var codec = HevcRadio.IsChecked == true ? "hevc" : "h264";
         var model = Model;
         foreach (var item in jobs) item.Status = "Na fila";
 
@@ -757,7 +775,7 @@ public partial class Editor : Window
         var settings = new UserSettings(
             NrEnabled: NrSwitch.IsChecked == true,
             ModelTag: Model,
-            CodecIndex: Codec.SelectedIndex,
+            CodecIndex: HevcRadio.IsChecked == true ? 1 : 0,
             Layers: SettingsStore.FromNrLayers(layers),
             CustomEngines: customEngines.Count > 0 ? new Dictionary<string, string>(customEngines) : null);
         SettingsStore.Save(settings);

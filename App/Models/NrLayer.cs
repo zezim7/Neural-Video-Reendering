@@ -106,6 +106,7 @@ internal sealed class NrLayer : INotifyPropertyChanged
             intensity = clamped;
             Notify();
             Notify(nameof(IntensityLabel));
+            Notify(nameof(IntensityValue));
             Notify(nameof(Summary));
         }
     }
@@ -120,6 +121,7 @@ internal sealed class NrLayer : INotifyPropertyChanged
             tone = clamped;
             Notify();
             Notify(nameof(ToneLabel));
+            Notify(nameof(ToneValue));
         }
     }
 
@@ -133,6 +135,7 @@ internal sealed class NrLayer : INotifyPropertyChanged
             structure = clamped;
             Notify();
             Notify(nameof(StructureLabel));
+            Notify(nameof(StructureValue));
         }
     }
 
@@ -149,10 +152,13 @@ internal sealed class NrLayer : INotifyPropertyChanged
 
     public string Title => $"Camada NR {Index}";
     public string Chevron => Expanded ? "▾" : "▸";
-    public string Summary => $"{Resolutions[ResolutionIndex].Name} · intensidade {Intensity:F2}";
+    public string Summary => $"{Resolutions[ResolutionIndex].Name} · {Intensity:F2}";
     public string IntensityLabel => $"Intensidade {Intensity:F2}";
     public string ToneLabel => $"Tom {Tone:F2}";
     public string StructureLabel => $"Estrutura {Structure:F2}";
+    public string IntensityValue => $"{Intensity:F2}";
+    public string ToneValue => $"{Tone:F2}";
+    public string StructureValue => $"{Structure:F2}";
     public string ToggleAccessibilityName => $"Ativar {Title}";
     public string DuplicateAccessibilityName => $"Duplicar {Title}";
     public string HeaderAccessibilityName => $"{Title} — ajustes";
