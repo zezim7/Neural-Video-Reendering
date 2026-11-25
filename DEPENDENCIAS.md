@@ -1,6 +1,6 @@
 # Dependências e avisos de terceiros
 
-O editor e sua interface são implementados em `App/`. O adaptador em `Engine.cpp` envia trabalhos ao exportador do Veyra-NRVideo 2.2.0 pelo protocolo v15. Ele usa o executável, os shaders e os modelos de uma instalação local compatível. O pacote do motor e os modelos proprietários não são redistribuídos com o editor.
+O editor e sua interface são implementados em `App/`. O adaptador em `Engine.cpp` envia trabalhos ao exportador do Veyra-NRVideo 2.2.0 pelo protocolo v15. Os ZIPs do projeto incluem o pacote portátil oficial da GPU escolhida na pasta `motor`. O empacotamento verifica o SHA-256 da origem e preserva a estrutura de arquivos e os avisos de licença do Veyra.
 
 - [Código-fonte do motor, versão 2.2.0](https://github.com/Likely7/Veyra-NRVideo/tree/v2.2.0)
 - [Pacotes do motor](https://github.com/Likely7/Veyra-NRVideo/releases/tag/v2.2.0)

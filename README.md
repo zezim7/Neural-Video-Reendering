@@ -2,6 +2,10 @@
 
 Editor de vídeos gravados para Windows. Permite selecionar um trecho, aplicar até quatro camadas de renderização neural e salvar um MP4.
 
+## Baixar
+
+Escolha `VideoNR-NVIDIA-win64.zip` ou `VideoNR-AMD-win64.zip` na [release mais recente](../../releases/latest). Extraia o ZIP inteiro para uma pasta gravável e abra `VideoNR.exe`. Cada ZIP inclui o motor na pasta `motor` e o runtime do .NET.
+
 ## Uso
 
 1. Adicione um ou mais vídeos à fila.
@@ -13,10 +17,12 @@ O player usa os codecs disponíveis no Windows. A exportação mantém a resolu�
 
 ## Requisitos
 
-Windows x64, .NET Desktop Runtime 8 e um pacote de processamento 2.2.0 compatível com a GPU. Se o aplicativo não localizar o pacote, clique em **Localizar motor**. A origem do motor e os requisitos por GPU estão em [Dependências](DEPENDENCIAS.md).
+Windows 11 x64 e uma GPU compatível com o pacote escolhido. A origem do motor e os requisitos por GPU estão em [Dependências](DEPENDENCIAS.md).
 
 ## Compilar
 
 Use o SDK .NET 8 e um compilador g++ MinGW-w64 x64 com C++20. Execute `./Build.ps1 -Compiler caminho/para/g++.exe`. O executável fica em `build/VideoNR.exe`.
+
+Para montar os ZIPs completos, execute `./Build.ps1 -SelfContained` no Windows e depois `python scripts/package-windows.py` com Python 3.11 ou superior. Os ZIPs ficam em `dist/`.
 
 O código é distribuído sob [GPL-3.0](LICENSE.txt).
