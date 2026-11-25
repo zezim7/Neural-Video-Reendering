@@ -1,0 +1,33 @@
+name: Importar código-fonte do motor
+
+on:
+  push:
+    branches: [motor-proprio]
+    paths: ['.github/workflows/importar-motor.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.ref == 'refs/heads/motor-proprio'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Registrar o arquivo de código-fonte verificado
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=origem/motor-2.2.0-source.zip
+          mkdir -p origem
+          if [ ! -f "$source" ]; then
+            curl --fail --location --retry 3 -o "$source" https://github.com/Likely7/Veyra-NRVideo/releases/download/v2.2.0-sources/Veyra-2.2.0-source.zip
+          fi
+          printf '%s  %s\n' e0e3c4e940a74afccb966a911db02a5777e1316916cba777f9310d52ba457be7 "$source" | sha256sum --check
+          unzip -tq "$source"
+          git add -- "$source"
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Import verified rendering engine source'
+          git push origin HEAD:motor-proprio
+        working-directory: motor

@@ -647,7 +647,8 @@ public partial class Editor : Window
     {
         foreach (var folder in new[] { root, System.IO.Path.Combine(root, "versions", "2.2.0") })
         {
-            var executable = System.IO.Path.Combine(folder, "veyra_qml_ui.exe");
+            var worker = System.IO.Path.Combine(folder, "VideoNR-RenderWorker.exe");
+            var executable = File.Exists(worker) ? worker : System.IO.Path.Combine(folder, "veyra_qml_ui.exe");
             if (!File.Exists(executable)) continue;
             try
             {
