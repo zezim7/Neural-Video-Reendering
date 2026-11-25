@@ -33,6 +33,14 @@ jobs:
       - name: Verificar exportação de teste
         run: |
           Expand-Archive dist/VideoNR-win64.zip -DestinationPath dist/test
+          $editor = Start-Process -FilePath (Resolve-Path dist/test/VideoNR.exe).Path -PassThru
+          try {
+            Start-Sleep -Seconds 5
+            $editor.Refresh()
+            if ($editor.HasExited) { throw "O editor fechou na abertura (código $($editor.ExitCode))." }
+          } finally {
+            if (!$editor.HasExited) { Stop-Process -Id $editor.Id }
+          }
           ./dist/test/motor/ffmpeg.exe -v error -f lavfi -i 'testsrc2=size=128x72:rate=12' -f lavfi -i 'sine=frequency=440' -t 2 -c:v libx264 -c:a aac dist/input.mp4
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar vídeo de teste.' }
           dotnet run --project tests/ExportSmoke -- dist/test/motor dist/input.mp4 dist

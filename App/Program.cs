@@ -69,7 +69,7 @@ public partial class Editor : Window
         Loaded += (_, _) => AddPaths(Environment.GetCommandLineArgs().Skip(1));
     }
 
-    private string Model => (NrVersion.SelectedItem as ComboBoxItem)?.Tag as string ?? "realesr-animevideov3";
+    private string Model => (NrVersion.SelectedItem as ComboBoxItem)?.Tag as string ?? RenderPipeline.DefaultModel;
     private int ActiveCount => NrSwitch.IsChecked == true ? layers.Count(l => l.Enabled) : 0;
     private bool CancelRequested => exportCancellation?.IsCancellationRequested == true;
 
@@ -82,13 +82,13 @@ public partial class Editor : Window
         RemoveButton.IsEnabled = !busy && clip is not null;
         ClearButton.IsEnabled = !busy && clips.Count > 0;
         AddLayerButton.IsEnabled = !busy && layers.Count < LayerLimit;
-        EngineLabel.Text = renderer.Ready(ActiveCount > 0) ? "Motor pronto" : "Arquivos do motor ausentes";
+        EngineLabel.Text = renderer.Ready(ActiveCount > 0, Model) ? "Motor pronto" : "Extraia o ZIP inteiro para carregar o motor";
         LayerSummary.Text = ActiveCount == 1 ? "1 camada ativa" : $"{ActiveCount} camadas em sequência";
         PlayButton.IsEnabled = ready;
         TrimTrack.IsEnabled = ready && clip?.Duration > 0;
         StartHandle.IsEnabled = EndHandle.IsEnabled = StartTime.IsEnabled = EndTime.IsEnabled
             = ResetTrimButton.IsEnabled = !busy && TrimTrack.IsEnabled;
-        ExportButton.IsEnabled = !busy && clips.Count > 0 && renderer.Ready(ActiveCount > 0);
+        ExportButton.IsEnabled = !busy && clips.Count > 0 && renderer.Ready(ActiveCount > 0, Model);
         CancelButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         CancelButton.IsEnabled = busy && !CancelRequested;
         ShowOutputButton.Visibility = outputFolder is null ? Visibility.Collapsed : Visibility.Visible;
@@ -465,7 +465,7 @@ public partial class Editor : Window
 
     private async void ExportClick(object sender, RoutedEventArgs e)
     {
-        if (busy || !renderer.Ready(ActiveCount > 0) || clips.Count == 0) return;
+        if (busy || !renderer.Ready(ActiveCount > 0, Model) || clips.Count == 0) return;
         var jobs = clips.ToArray();
         string? single = null;
         string folder;

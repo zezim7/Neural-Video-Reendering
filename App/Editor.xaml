@@ -210,8 +210,8 @@
                             <TextBlock x:Name="LayerSummary" Text="1 camada ativa" Style="{StaticResource Secondary}" Margin="0,4,0,12"/>
                             <TextBlock Text="Modelo de NR" Style="{StaticResource Secondary}" Margin="0,0,0,4"/>
                             <ComboBox x:Name="NrVersion" SelectionChanged="ChangeVersion" Margin="0,0,0,10" AutomationProperties.Name="Modelo de NR">
-                                <ComboBoxItem Content="Vídeo e animação" Tag="realesr-animevideov3"/>
                                 <ComboBoxItem Content="Imagem real" Tag="realesrgan-x4plus"/>
+                                <ComboBoxItem Content="Animação" Tag="realesrgan-x4plus-anime"/>
                             </ComboBox>
                         </StackPanel>
                         <Button x:Name="AddLayerButton" DockPanel.Dock="Bottom" Content="+ Adicionar camada NR" Click="AddLayerClick" Margin="0,8,0,0"/>

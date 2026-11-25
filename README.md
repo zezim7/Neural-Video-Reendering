@@ -7,7 +7,7 @@ Editor de vídeos para Windows com corte, fila de exportação e melhoria neural
 Extraia todo o conteúdo de `VideoNR-win64.zip` e abra `VideoNR.exe`. O pacote traz o runtime do .NET e as ferramentas de processamento. [Releases](../../releases)
 
 1. Adicione um ou mais vídeos à fila e selecione o trecho de cada um.
-2. Escolha **Vídeo e animação** ou **Imagem real**. Ajuste a resolução interna e a intensidade de cada camada. Para exportar sem melhoria neural, desative **Melhoria NR**.
+2. Escolha **Imagem real** ou **Animação**. Ajuste a resolução interna e a intensidade de cada camada. Para exportar sem melhoria neural, desative **Melhoria NR**.
 3. Selecione H.264 ou HEVC e clique em **Iniciar exportação**.
 
 O motor neural trabalha com vídeo SDR, usa espaço temporário para armazenar quadros e converte clipes com taxa variável para taxa constante. Para vídeo HDR, a melhoria neural fica indisponível. A exportação atual usa vídeo de 8 bits. As configurações dos filtros são aplicadas na exportação.

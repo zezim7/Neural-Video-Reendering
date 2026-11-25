@@ -48,7 +48,7 @@ def main():
         ffmpeg_bin = next(ffmpeg.rglob("ffmpeg.exe")).parent
         real = unpack(work, "realesrgan", NEURAL)
         real_root = next(real.rglob("realesrgan-ncnn-vulkan.exe")).parent
-        for file in ("realesr-animevideov3-x2.param", "realesr-animevideov3-x2.bin",
+        for file in ("realesrgan-x4plus-anime.param", "realesrgan-x4plus-anime.bin",
                      "realesrgan-x4plus.param", "realesrgan-x4plus.bin"):
             if not (real_root / "models" / file).is_file():
                 raise ValueError(f"Modelo ausente no pacote neural: {file}")

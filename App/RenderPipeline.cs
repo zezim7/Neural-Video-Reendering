@@ -13,8 +13,11 @@ internal sealed class RenderPipeline(string directory)
     private readonly string ffprobe = Path.Combine(directory, "ffprobe.exe");
     private readonly string inference = Path.Combine(directory, "realesrgan-ncnn-vulkan.exe");
 
-    internal bool Ready(bool neural) => File.Exists(ffmpeg) && File.Exists(ffprobe)
-        && (!neural || (File.Exists(inference) && Directory.Exists(Path.Combine(directory, "models"))));
+    internal const string DefaultModel = "realesrgan-x4plus";
+
+    internal bool Ready(bool neural, string model = DefaultModel) => File.Exists(ffmpeg) && File.Exists(ffprobe)
+        && (!neural || (File.Exists(inference) && File.Exists(Path.Combine(directory, "models", model + ".param"))
+            && File.Exists(Path.Combine(directory, "models", model + ".bin"))));
 
     internal async Task ExportAsync(string input, string output, double start, double end, string codec,
         string model, RenderLayer[] settings, Action<int, string> report, CancellationToken cancellation)
@@ -65,15 +68,17 @@ internal sealed class RenderPipeline(string directory)
                 var mixed = files.Directory($"camada-{i}");
                 var internalHeight = layer.Height == 0 ? height : Math.Min(height, layer.Height);
                 await Ffmpeg([.. Sequence(current, rate), "-vf", $"scale=-2:{internalHeight}", Frames(small)], cancellation);
-                await Run(inference, ["-i", small, "-o", enhanced, "-m", Path.Combine(directory, "models"),
-                    "-n", model, "-s", model == "realesr-animevideov3" ? "2" : "4", "-f", "png"], cancellation);
+                var diagnostics = await Run(inference,
+                    ["-i", small, "-o", enhanced, "-m", "models", "-n", model, "-s", "4", "-f", "png", "-j", "1:1:1"],
+                    cancellation, useDiagnostics: true);
 
                 var adjustments = $"scale={size},setsar=1,format=yuv444p,eq=saturation={Number(0.9 + 0.2 * layer.Tone)}"
                     + $",unsharp=5:5:{Number(0.35 * layer.Structure)}";
                 var blend = $"[0:v]setsar=1,format=yuv444p[base];[1:v]{adjustments}[nr];"
                     + $"[nr][base]blend=all_mode=normal:all_opacity={Number(layer.Intensity)}:shortest=1[v]";
                 if (Directory.GetFiles(current, "*.png").Length != Directory.GetFiles(enhanced, "*.png").Length)
-                    throw new IOException("O motor neural não devolveu todos os quadros.");
+                    throw new IOException("A melhoria neural não produziu todos os quadros. Confira se sua GPU tem um driver Vulkan atualizado. "
+                        + LastDiagnostic(diagnostics));
                 await Ffmpeg([.. Sequence(current, rate), .. Sequence(enhanced, rate),
                     "-filter_complex_threads", "1", "-filter_complex", blend, "-map", "[v]", Frames(mixed)], cancellation);
                 Directory.Delete(current, true);
@@ -102,12 +107,12 @@ internal sealed class RenderPipeline(string directory)
     private Task<string> Ffmpeg(string[] arguments, CancellationToken cancellation) =>
         Run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-nostdin", "-n", .. arguments], cancellation);
 
-    private static async Task<string> Run(string tool, string[] arguments, CancellationToken cancellation)
+    private static async Task<string> Run(string tool, string[] arguments, CancellationToken cancellation, bool useDiagnostics = false)
     {
         cancellation.ThrowIfCancellationRequested();
         var info = new ProcessStartInfo(tool)
         {
-            CreateNoWindow = true, UseShellExecute = false,
+            CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(tool)!,
             RedirectStandardOutput = true, RedirectStandardError = true,
         };
         foreach (var argument in arguments) info.ArgumentList.Add(argument);
@@ -126,11 +131,16 @@ internal sealed class RenderPipeline(string directory)
         cancellation.ThrowIfCancellationRequested();
         if (process.ExitCode != 0)
         {
-            var last = detail.Trim();
-            if (last.Length > 600) last = last[^600..];
-            throw new IOException($"{Path.GetFileName(tool)} retornou código {process.ExitCode}. {last}");
+            var hint = useDiagnostics ? "Confira o driver Vulkan da GPU ou desative Melhoria NR para exportar. " : "";
+            throw new IOException($"{Path.GetFileName(tool)} retornou código {process.ExitCode}. {hint}{LastDiagnostic(detail)}");
         }
-        return result;
+        return useDiagnostics ? detail : result;
+    }
+
+    private static string LastDiagnostic(string detail)
+    {
+        var trimmed = detail.Trim();
+        return trimmed.Length > 600 ? trimmed[^600..] : trimmed;
     }
 
     private sealed class FrameWorkspace(string output) : IDisposable
