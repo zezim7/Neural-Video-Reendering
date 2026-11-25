@@ -10,8 +10,5 @@
     <Product>Vídeo NR Editor</Product>
     <Description>Editor de vídeo com renderização neural e exportação offline</Description>
   </PropertyGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="../Engine.exe" LogicalName="VideoNR.Engine.exe" />
-  </ItemGroup>
 </Project>
 

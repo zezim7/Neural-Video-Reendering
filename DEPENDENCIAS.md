@@ -1,9 +1,7 @@
-# Dependências e avisos de terceiros
+# Dependências e avisos
 
-O editor e sua interface são implementados em `App/`. O adaptador em `Engine.cpp` envia trabalhos ao exportador do Veyra-NRVideo 2.2.0 pelo protocolo v15. Os ZIPs do projeto incluem o pacote portátil oficial da GPU escolhida na pasta `motor`. O empacotamento verifica o SHA-256 da origem e preserva a estrutura de arquivos e os avisos de licença do Veyra.
+O editor e o fluxo de exportação são implementados em `App/`. A exportação usa FFmpeg e a melhoria neural usa Real-ESRGAN ncnn Vulkan. O ZIP inclui os executáveis, modelos e avisos dos componentes distribuídos.
 
-- [Código-fonte do motor, versão 2.2.0](https://github.com/Likely7/Veyra-NRVideo/tree/v2.2.0)
-- [Pacotes do motor](https://github.com/Likely7/Veyra-NRVideo/releases/tag/v2.2.0)
-- [Avisos de terceiros e componentes do motor](https://github.com/Likely7/Veyra-NRVideo/blob/v2.2.0/THIRD_PARTY_NOTICES.md)
-
-Os arquivos em `upstream/` foram copiados do Veyra-NRVideo, commit `671f9e963db63cbd7f912caa35c4caa3e0e60f76`, sob GPL-3.0. As referências de origem e os avisos incluídos no código foram preservados.
+- FFmpeg 9.1. [Binários usados no pacote](https://github.com/GyanD/codexffmpeg/releases/tag/9.1) · [Código-fonte do FFmpeg](https://ffmpeg.org/download.html)
+- Real-ESRGAN ncnn Vulkan. [Código-fonte](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan) · [Pacote oficial e modelos](https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.5.0)
+- .NET 8 e WPF. [Distribuição e código-fonte](https://github.com/dotnet/core)
