@@ -1,123 +1,127 @@
 <div align="center">
 
-# 🎬 Vídeo NR Studio
+# 🎬 Video NR Studio
 
-**Editor e renderizador neural de vídeo 100% offline para Windows.**  
-Corte com precisão, empilhe até 4 camadas de melhoria neural na GPU e exporte em lote para MP4 (H.264 / HEVC) — sem nuvem, sem assinatura e sem marca d'água.
-
-[![Release](https://img.shields.io/github/v/release/zezim7/Neural-Video-Reendering?style=for-the-badge&color=3B82F6&label=Download)](https://github.com/zezim7/Neural-Video-Reendering/releases/latest)
-[![Build](https://img.shields.io/github/actions/workflow/status/zezim7/Neural-Video-Reendering/windows.yml?branch=main&style=for-the-badge&label=Windows%20CI)](https://github.com/zezim7/Neural-Video-Reendering/actions/workflows/windows.yml)
-[![Plataforma](https://img.shields.io/badge/Windows%2011-x64-171B24?style=for-the-badge&logo=windows&logoColor=3B82F6)](#requisitos-e-gpus-compatíveis)
-[![Licença](https://img.shields.io/badge/Licença-GPL--3.0-22C55E?style=for-the-badge)](LICENSE.txt)
+**English** · [Português (BR)](README.pt-BR.md) · [简体中文](README.zh-CN.md)
 
 <br/>
 
-[**⬇️ Baixar última versão**](https://github.com/zezim7/Neural-Video-Reendering/releases/latest) · [**✨ Recursos**](#-recursos) · [**⌨️ Atalhos**](#️-atalhos-de-teclado) · [**🛠️ Compilar**](#️-compilar-e-testar)
+**100% offline neural video renderer & trimmer for Windows.**  
+Trim with frame-level accuracy, stack up to 4 GPU neural rendering layers, and batch-export to MP4 (H.264 / HEVC) — no cloud, no subscriptions, no watermarks.
+
+[![Release](https://img.shields.io/github/v/release/zezim7/Neural-Video-Reendering?style=for-the-badge&color=3B82F6&label=Download)](https://github.com/zezim7/Neural-Video-Reendering/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/zezim7/Neural-Video-Reendering/windows.yml?branch=main&style=for-the-badge&label=Windows%20CI)](https://github.com/zezim7/Neural-Video-Reendering/actions/workflows/windows.yml)
+[![Platform](https://img.shields.io/badge/Windows%2011-x64-171B24?style=for-the-badge&logo=windows&logoColor=3B82F6)](#requirements--supported-gpus)
+[![License](https://img.shields.io/badge/License-GPL--3.0-22C55E?style=for-the-badge)](LICENSE.txt)
+
+<br/>
+
+[**⬇️ Download Latest Release**](https://github.com/zezim7/Neural-Video-Reendering/releases/latest) · [**✨ Features**](#-features) · [**⌨️ Shortcuts**](#️-keyboard-shortcuts) · [**🛠️ Build from Source**](#️-build--test)
 
 </div>
 
 ---
 
-## ✨ Recursos
+## ✨ Features
 
-- **🧠 Até 4 camadas de Renderização Neural (NR) em sequência** — ajuste individualmente a resolução interna (`480p` a `1440p` ou `Nativa`), **Intensidade**, **Tom** e **Estrutura**, duplique camadas e ative/desative cada uma com um clique.
-- **✂️ Linha do tempo com corte preciso** — arraste as alças, digite timecodes em `HH:MM:SS.mmm` ou marque início e fim direto durante a reprodução. Cada vídeo da fila guarda o seu próprio corte.
-- **📦 Fila de exportação em lote** — arraste vídeos ou pastas inteiras para a janela e exporte tudo de uma vez com as mesmas configurações de NR e codec.
-- **🎞️ Saída MP4 em H.264 ou HEVC** — preserva a resolução, taxa de quadros e faixas de áudio compatíveis da origem, com sobrescrita segura via arquivo temporário e progresso na barra de tarefas do Windows.
-- **🌑 Interface de estúdio nativa (.NET 8 WPF)** — tema escuro em grafite neutro + azul elétrico, barra de título escura no Windows 10/11 e persistência automática das suas preferências entre sessões.
-- **🔒 100% local e portátil** — nenhum vídeo sai do seu computador. Basta extrair o ZIP e abrir `VideoNR.exe` (runtime .NET e motor já incluídos).
-
----
-
-## ⬇️ Download e Instalação
-
-1. Acesse a [**release mais recente**](https://github.com/zezim7/Neural-Video-Reendering/releases/latest).
-2. Baixe o pacote correspondente à sua placa de vídeo:
-   - **`VideoNR-NVIDIA-win64.zip`** — para placas NVIDIA RTX.
-   - **`VideoNR-AMD-win64.zip`** — para placas AMD Radeon RX 7000 / 9000.
-3. Extraia o conteúdo completo do ZIP para uma pasta gravável.
-4. Execute **`VideoNR.exe`**.
+- **🧠 Up to 4 stacked Neural Rendering (NR) layers** — individually configure internal processing resolution (`480p` to `1440p` or `Native`), **Intensity**, **Tone**, and **Structure**, duplicate layers, and toggle each pass on/off with one click.
+- **✂️ Precision trimming timeline** — drag handles, type exact `HH:MM:SS.mmm` timecodes, or mark in/out points while playing. Every video in the queue keeps its own trim range.
+- **📦 Batch export queue** — drag and drop multiple videos or entire folders into the window and export everything in sequence with shared NR and codec settings.
+- **🎞️ MP4 output in H.264 or HEVC** — preserves source resolution, frame rate, and MP4-compatible audio tracks, with safe temp-file overwrite protection and native Windows taskbar progress.
+- **🌑 Native studio UI (.NET 8 WPF)** — neutral graphite & electric-blue dark theme, native dark title bar on Windows 10/11, and automatic preference persistence between sessions.
+- **🔒 100% local & portable** — your videos never leave your machine. Extract the ZIP and launch `VideoNR.exe` (both the .NET runtime and rendering engine are bundled).
 
 ---
 
-## 🎮 Requisitos e GPUs compatíveis
+## ⬇️ Download & Quick Start
 
-- **Sistema operacional:** Windows 11 x64 (drivers de GPU atualizados).
-- **GPU compatível:**
+1. Go to the [**latest release**](https://github.com/zezim7/Neural-Video-Reendering/releases/latest).
+2. Download the portable package for your GPU:
+   - **`VideoNR-NVIDIA-win64.zip`** — for NVIDIA RTX GPUs.
+   - **`VideoNR-AMD-win64.zip`** — for AMD Radeon RX 7000 / 9000 GPUs.
+3. Extract the entire ZIP into a writable folder.
+4. Launch **`VideoNR.exe`**.
 
-| Modo NR | GPUs compatíveis | Pacote |
+---
+
+## 🎮 Requirements & Supported GPUs
+
+- **OS:** Windows 11 x64 (with up-to-date GPU drivers).
+- **GPU:**
+
+| NR Mode | Supported GPUs | Package |
 | :--- | :--- | :--- |
-| **NVIDIA original** | RTX série 50 | `VideoNR-NVIDIA-win64.zip` |
-| **SF310.9.16 (desempenho / legado)** | RTX séries 20 a 50 | `VideoNR-NVIDIA-win64.zip` |
-| **AMD Small / Original** *(experimental)* | Radeon RX 7000 e RX 9000 | `VideoNR-AMD-win64.zip` |
+| **NVIDIA Original** | RTX 50 series | `VideoNR-NVIDIA-win64.zip` |
+| **SF310.9.16 (Performance / Legacy)** | RTX 20–50 series | `VideoNR-NVIDIA-win64.zip` |
+| **AMD Small / Original** *(experimental)* | Radeon RX 7000 & RX 9000 | `VideoNR-AMD-win64.zip` |
 
 > [!NOTE]
-> Os modos AMD exigem o runtime HIP instalado e ainda estão em fase experimental neste editor.  
-> O player de preview utiliza os codecs disponíveis no Windows; mesmo se um formato específico (ex: MKV/HEVC sem codec instalado) não abrir no preview, ele continua podendo ser exportado normalmente pela fila.
+> AMD modes require the HIP runtime and are currently experimental in this editor.  
+> The built-in preview uses codecs installed on Windows; even if an uncommon container/codec (e.g., MKV/HEVC without Windows codecs) cannot preview, it can still be exported normally through the queue.
 
 ---
 
-## 🚀 Como usar
+## 🚀 Usage
 
-1. **Adicione vídeos** clicando em **Selecionar vídeos** ou arrastando arquivos e pastas diretamente para a janela.
-2. **Defina o corte** (opcional) usando as alças na linha do tempo, os botões **`[ Início`** / **`Fim ]`** ou digitando `HH:MM:SS.mmm`.
-3. **Configure o NR** escolhendo a versão do motor e ajustando até 4 camadas (resolução interna, intensidade, tom e estrutura).
-4. **Escolha o codec (`H.264` ou `HEVC`)** e clique em **Iniciar exportação**.
+1. **Add videos** by clicking **Selecionar vídeos** or dragging files/folders directly onto the window.
+2. **Set a trim range** (optional) with the timeline handles, **`[ Início`** / **`Fim ]`** buttons, or `HH:MM:SS.mmm` inputs.
+3. **Tune Neural Rendering** by choosing your NR mode and configuring up to 4 layers (internal resolution, intensity, tone, and structure).
+4. **Pick H.264 or HEVC** and click **Iniciar exportação**.
 
 ---
 
-## ⌨️ Atalhos de teclado
+## ⌨️ Keyboard Shortcuts
 
-| Atalho | Ação |
+| Shortcut | Action |
 | :---: | :--- |
-| `Espaço` ou clique no vídeo | Reproduzir / Pausar |
-| `←` / `→` | Voltar / Avançar 1 segundo |
-| `Shift` + `←` / `→` | Voltar / Avançar 5 segundos |
-| `I` | Marcar início do corte no ponto atual |
-| `O` | Marcar fim do corte no ponto atual |
-| `M` | Silenciar / Ativar áudio do preview |
-| `Delete` | Remover o vídeo selecionado da fila |
+| `Space` or click video | Play / Pause |
+| `←` / `→` | Seek −1s / +1s |
+| `Shift` + `←` / `→` | Seek −5s / +5s |
+| `I` | Mark trim start at current position |
+| `O` | Mark trim end at current position |
+| `M` | Mute / Unmute preview audio |
+| `Delete` | Remove selected clip from queue |
 
 ---
 
-## 🛠️ Compilar e testar
+## 🛠️ Build & Test
 
-### Pré-requisitos
+### Prerequisites
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- **MSVC x64** (`cl.exe`, recomendado via *Developer PowerShell for VS*) ou **MinGW-w64 `g++`** com suporte a C++20
-- **Python 3.11+** *(apenas para montar os ZIPs portáteis completos)*
+- **MSVC x64** (`cl.exe`, recommended via *Developer PowerShell for VS*) or **MinGW-w64 `g++`** with C++20 support
+- **Python 3.11+** *(only required to assemble full offline portable ZIPs)*
 
-### Comandos
+### Commands
 
 ```powershell
-# Executar testes unitários
+# Run unit tests
 dotnet run --project Tests/VideoNR.Tests.csproj
 
-# Compilar o editor (build/VideoNR.exe) e o adaptador nativo (build/Engine.exe)
+# Build the editor (build/VideoNR.exe) and native adapter (build/Engine.exe)
 ./Build.ps1
 
-# Compilar self-contained e gerar os ZIPs portáteis completos em dist/
+# Build self-contained and package full offline ZIPs into dist/
 ./Build.ps1 -SelfContained
 python scripts/package-windows.py
 ```
 
-### Estrutura do repositório
+### Repository Layout
 
 ```text
-├── App/                  # Interface WPF (.NET 8)
+├── App/                  # .NET 8 WPF Studio UI
 │   ├── Models/           # ClipItem, NrLayer, TrimSelection
 │   ├── Services/         # EngineLocator, VideoExporter, SettingsStore
-│   ├── Editor.xaml       # Layout estúdio (grafite + azul elétrico)
-│   └── Editor.xaml.cs    # Controlador do player, corte e fila
-├── Engine.cpp            # Adaptador nativo C++20 (MSVC) para o motor de renderização
-├── Tests/                # Testes unitários (.NET 8)
-├── scripts/              # Empacotamento automatizado dos ZIPs Windows
-└── Build.ps1             # Script de build Windows
+│   ├── Editor.xaml       # Neutral graphite + electric blue studio layout
+│   └── Editor.xaml.cs    # Player, timeline, queue, and export controller
+├── Engine.cpp            # Native C++20 (MSVC) adapter for the rendering engine
+├── Tests/                # Unit tests (.NET 8)
+├── scripts/              # Automated Windows portable ZIP packager
+└── Build.ps1             # Windows build script
 ```
 
 ---
 
-## 📄 Licença e Avisos
+## 📄 License & Third-Party Notices
 
-Este projeto é distribuído sob a licença **[GPL-3.0](LICENSE.txt)**.  
-Consulte [DEPENDENCIAS.md](DEPENDENCIAS.md) para detalhes sobre componentes e avisos de terceiros incluídos nos pacotes portáteis.
+This project is licensed under **[GPL-3.0](LICENSE.txt)**.  
+See [DEPENDENCIAS.md](DEPENDENCIAS.md) for third-party components and notices bundled in the portable packages.
