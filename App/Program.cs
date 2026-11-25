@@ -639,13 +639,8 @@ public partial class Editor : Window
 
     private static string? FindEngine(string vendor)
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var roots = new[] { System.IO.Path.Combine(AppContext.BaseDirectory, "motor"),
-            System.IO.Path.Combine(home, "Downloads", $"Veyra-2.2.0-{vendor}-win64-portable"),
-            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Veyra"),
-            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Veyra"),
-            AppContext.BaseDirectory };
-        return roots.Select(root => EngineIn(root, vendor)).FirstOrDefault(path => path is not null);
+        var directory = AppContext.BaseDirectory;
+        return EngineIn(System.IO.Path.Combine(directory, "motor"), vendor) ?? EngineIn(directory, vendor);
     }
 
     private static string? EngineIn(string root, string vendor)

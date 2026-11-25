@@ -17,7 +17,15 @@ O player usa os codecs disponíveis no Windows. A exportação mantém a resolu�
 
 ## Requisitos
 
-Windows 11 x64 e uma GPU compatível com o pacote escolhido. A origem do motor e os requisitos por GPU estão em [Dependências](DEPENDENCIAS.md).
+Windows 11 x64 e uma GPU compatível com o pacote escolhido.
+
+| Modo | GPUs compatíveis | Pacote |
+| --- | --- | --- |
+| NVIDIA original | RTX 50 | NVIDIA |
+| SF310.9.16, desempenho ou legado | RTX 20 a 50 | NVIDIA |
+| AMD Small ou Original (experimental) | RX 7000 e RX 9000 | AMD |
+
+Os modos AMD exigem o runtime HIP e ainda precisam de teste em uma Radeon neste editor.
 
 ## Compilar
 

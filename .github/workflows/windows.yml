@@ -40,6 +40,6 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag dist/VideoNR-NVIDIA-win64.zip dist/VideoNR-AMD-win64.zip --clobber --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $tag dist/VideoNR-NVIDIA-win64.zip dist/VideoNR-AMD-win64.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "Vídeo NR Editor para Windows" --notes "Escolha o ZIP da sua GPU, extraia todo o conteúdo e abra VideoNR.exe. O motor Veyra 2.2.0 já está incluído."
+            gh release create $tag dist/VideoNR-NVIDIA-win64.zip dist/VideoNR-AMD-win64.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "Vídeo NR Editor para Windows" --notes "Escolha o ZIP da sua GPU, extraia todo o conteúdo e abra VideoNR.exe. O motor de renderização já vem no ZIP."
           }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar a release.' }
