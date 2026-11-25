@@ -13,6 +13,8 @@ public sealed record NrModelOption(string Tag, string Label, string Vendor)
     public override string ToString() => Label;
 }
 
+public sealed record NrPreset(string Name, double Intensity, double Tone, double Structure);
+
 internal sealed class NrLayer : INotifyPropertyChanged
 {
     internal static readonly NrResolutionOption[] Resolutions =
@@ -26,6 +28,13 @@ internal sealed class NrLayer : INotifyPropertyChanged
     ];
 
     internal static readonly string[] ResolutionNames = Resolutions.Select(r => r.Name).ToArray();
+
+    internal static readonly NrPreset[] Presets =
+    [
+        new("Sutil", 0.45, 0.50, 0.50),
+        new("Equilibrado", 0.75, 0.80, 0.75),
+        new("Máximo", 1.00, 1.00, 1.00)
+    ];
 
     internal static readonly NrModelOption[] Models =
     [
@@ -173,6 +182,20 @@ internal sealed class NrLayer : INotifyPropertyChanged
         Tone = Tone,
         Structure = Structure
     };
+
+    internal void ApplyPreset(NrPreset preset)
+    {
+        Intensity = preset.Intensity;
+        Tone = preset.Tone;
+        Structure = preset.Structure;
+    }
+
+    internal void ResetDefaults()
+    {
+        Intensity = 1.0;
+        Tone = 1.0;
+        Structure = 1.0;
+    }
 
     public string Encode() => FormattableString.Invariant(
         $"{Resolutions[ResolutionIndex].Policy} {Intensity:F2} {Tone:F2} {Structure:F2}");

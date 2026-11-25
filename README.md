@@ -1,53 +1,28 @@
-<div align="center">
-
-# 🎬 Video NR Studio
+# Video NR
 
 **English** · [Português (BR)](README.pt-BR.md) · [简体中文](README.zh-CN.md)
 
-<br/>
+Offline neural video renderer, trimmer, and still-frame DLSS 5 processor for Windows 11 x64. Powered locally on GPU through the bundled Veyra rendering engine with no cloud dependencies.
 
-**100% offline neural video renderer & trimmer for Windows.**  
-Trim with frame-level accuracy, stack up to 4 GPU neural rendering layers, and batch-export to MP4 (H.264 / HEVC) — no cloud, no subscriptions, no watermarks.
+## Features
 
-[![Release](https://img.shields.io/github/v/release/zezim7/Neural-Video-Reendering?style=for-the-badge&color=3B82F6&label=Download)](https://github.com/zezim7/Neural-Video-Reendering/releases/latest)
-[![Build](https://img.shields.io/github/actions/workflow/status/zezim7/Neural-Video-Reendering/windows.yml?branch=main&style=for-the-badge&label=Windows%20CI)](https://github.com/zezim7/Neural-Video-Reendering/actions/workflows/windows.yml)
-[![Platform](https://img.shields.io/badge/Windows%2011-x64-171B24?style=for-the-badge&logo=windows&logoColor=3B82F6)](#requirements--supported-gpus)
-[![License](https://img.shields.io/badge/License-GPL--3.0-22C55E?style=for-the-badge)](LICENSE.txt)
+- **Stacked Neural Rendering (up to 4 layers)** — configure internal processing resolution (`480p` to `1440p` or `Native`), **Intensity**, **Tone**, and **Structure** per layer, apply presets (`Sutil`, `Equilibrado`, `Máximo`), duplicate layers, or double-click any slider to reset to `1.00`.
+- **DLSS 5 / NR Print & Image Processing** — render a single video frame at the current playhead (`P`), capture a screen region/monitor (`Ctrl+Shift+P`), open an image (`PNG`, `JPG`, `BMP`, `WEBP`, `TIFF`), or paste from the clipboard (`Ctrl+V`). Includes a side-by-side interactive before/after viewer with `100%` (1:1) pixel inspection, clipboard copy, and PNG/JPG export.
+- **Frame-Accurate Trimming & Queue** — scrub along the time ruler, step frame-by-frame (`,` / `.`), drag trim handles, or enter `HH:MM:SS.mmm` bounds. Videos in the collapsible queue keep independent trim ranges and display live extracted thumbnails and resolution tags.
+- **Batch MP4 Export (H.264 / HEVC)** — drag videos or folders onto the window and export sequentially while preserving source resolution, frame rate, and compatible audio tracks.
+- **Native Windows 11 Interface** — .NET 8 WPF darkroom UI with integrated `WindowChrome` title bar, `Segoe Fluent Icons`, Per-Monitor DPI v2 support, and automatic preference persistence.
 
-<br/>
+## Download & Quick Start
 
-[**⬇️ Download Latest Release**](https://github.com/zezim7/Neural-Video-Reendering/releases/latest) · [**✨ Features**](#-features) · [**⌨️ Shortcuts**](#️-keyboard-shortcuts) · [**🛠️ Build from Source**](#️-build--test)
+1. Download the portable package for your GPU from [Releases](https://github.com/zezim7/Neural-Video-Reendering/releases/latest):
+   - `VideoNR-NVIDIA-win64.zip` — NVIDIA RTX GPUs
+   - `VideoNR-AMD-win64.zip` — AMD Radeon RX 7000 / 9000 GPUs
+2. Extract the entire archive into a writable folder.
+3. Launch `VideoNR.exe`.
 
-</div>
+## Requirements & Supported GPUs
 
----
-
-## ✨ Features
-
-- **🧠 Up to 4 stacked Neural Rendering (NR) layers** — individually configure internal processing resolution (`480p` to `1440p` or `Native`), **Intensity**, **Tone**, and **Structure**, duplicate layers, and toggle each pass on/off with one click.
-- **✂️ Precision trimming timeline** — drag handles, type exact `HH:MM:SS.mmm` timecodes, or mark in/out points while playing. Every video in the queue keeps its own trim range.
-- **📦 Batch export queue** — drag and drop multiple videos or entire folders into the window and export everything in sequence with shared NR and codec settings.
-- **🎞️ MP4 output in H.264 or HEVC** — preserves source resolution, frame rate, and MP4-compatible audio tracks, with safe temp-file overwrite protection and native Windows taskbar progress.
-- **🌑 Native studio UI (.NET 8 WPF)** — neutral graphite & electric-blue dark theme, native dark title bar on Windows 10/11, and automatic preference persistence between sessions.
-- **🔒 100% local & portable** — your videos never leave your machine. Extract the ZIP and launch `VideoNR.exe` (both the .NET runtime and rendering engine are bundled).
-
----
-
-## ⬇️ Download & Quick Start
-
-1. Go to the [**latest release**](https://github.com/zezim7/Neural-Video-Reendering/releases/latest).
-2. Download the portable package for your GPU:
-   - **`VideoNR-NVIDIA-win64.zip`** — for NVIDIA RTX GPUs.
-   - **`VideoNR-AMD-win64.zip`** — for AMD Radeon RX 7000 / 9000 GPUs.
-3. Extract the entire ZIP into a writable folder.
-4. Launch **`VideoNR.exe`**.
-
----
-
-## 🎮 Requirements & Supported GPUs
-
-- **OS:** Windows 11 x64 (with up-to-date GPU drivers).
-- **GPU:**
+- **OS:** Windows 11 x64 with up-to-date GPU drivers.
 
 | NR Mode | Supported GPUs | Package |
 | :--- | :--- | :--- |
@@ -56,40 +31,32 @@ Trim with frame-level accuracy, stack up to 4 GPU neural rendering layers, and b
 | **AMD Small / Original** *(experimental)* | Radeon RX 7000 & RX 9000 | `VideoNR-AMD-win64.zip` |
 
 > [!NOTE]
-> AMD modes require the HIP runtime and are currently experimental in this editor.  
-> The built-in preview uses codecs installed on Windows; even if an uncommon container/codec (e.g., MKV/HEVC without Windows codecs) cannot preview, it can still be exported normally through the queue.
+> AMD modes require the HIP runtime and are experimental in this editor.
+> The built-in preview uses system codecs installed on Windows; files that cannot preview in the player (e.g., MKV/HEVC without Windows codecs) can still be exported and single-frame printed through the GPU engine.
 
----
-
-## 🚀 Usage
-
-1. **Add videos** by clicking **Selecionar vídeos** or dragging files/folders directly onto the window.
-2. **Set a trim range** (optional) with the timeline handles, **`[ Início`** / **`Fim ]`** buttons, or `HH:MM:SS.mmm` inputs.
-3. **Tune Neural Rendering** by choosing your NR mode and configuring up to 4 layers (internal resolution, intensity, tone, and structure).
-4. **Pick H.264 or HEVC** and click **Iniciar exportação**.
-
----
-
-## ⌨️ Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Shortcut | Action |
-| :---: | :--- |
+| :--- | :--- |
 | `Space` or click video | Play / Pause |
+| `,` / `.` | Step −1 / +1 frame |
 | `←` / `→` | Seek −1s / +1s |
 | `Shift` + `←` / `→` | Seek −5s / +5s |
-| `I` | Mark trim start at current position |
-| `O` | Mark trim end at current position |
+| `I` / `O` | Mark trim start / end at current position |
 | `M` | Mute / Unmute preview audio |
+| `Q` | Toggle queue drawer |
+| `P` | Render current video frame with DLSS 5 / NR |
+| `Ctrl` + `Shift` + `P` | Screen capture print with DLSS 5 / NR |
+| `Ctrl` + `V` | Paste clipboard image for DLSS 5 / NR |
+| `Ctrl` + `O` | Open video files |
 | `Delete` | Remove selected clip from queue |
 
----
-
-## 🛠️ Build & Test
+## Build & Test
 
 ### Prerequisites
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- **MSVC x64** (`cl.exe`, recommended via *Developer PowerShell for VS*) or **MinGW-w64 `g++`** with C++20 support
-- **Python 3.11+** *(only required to assemble full offline portable ZIPs)*
+- **MSVC x64** (`cl.exe`, via *Developer PowerShell for VS*) or **MinGW-w64 `g++`** with C++20 support
+- **Python 3.11+** *(only required to assemble offline portable ZIPs)*
 
 ### Commands
 
@@ -100,28 +67,33 @@ dotnet run --project Tests/VideoNR.Tests.csproj
 # Build the editor (build/VideoNR.exe) and native adapter (build/Engine.exe)
 ./Build.ps1
 
-# Build self-contained and package full offline ZIPs into dist/
+# Build self-contained and package portable ZIPs into dist/
 ./Build.ps1 -SelfContained
 python scripts/package-windows.py
 ```
 
-### Repository Layout
+### Repository Structure
 
 ```text
-├── App/                  # .NET 8 WPF Studio UI
-│   ├── Models/           # ClipItem, NrLayer, TrimSelection
-│   ├── Services/         # EngineLocator, VideoExporter, SettingsStore
-│   ├── Editor.xaml       # Neutral graphite + electric blue studio layout
-│   └── Editor.xaml.cs    # Player, timeline, queue, and export controller
-├── Engine.cpp            # Native C++20 (MSVC) adapter for the rendering engine
-├── Tests/                # Unit tests (.NET 8)
-├── scripts/              # Automated Windows portable ZIP packager
-└── Build.ps1             # Windows build script
+├── App/                        # .NET 8 WPF application
+│   ├── Assets/                 # Multi-resolution application icon
+│   ├── Helpers/                # DWM dark mode and window chrome helpers
+│   ├── Imaging/                # GDI screen capture, WIC I/O, video thumbnails
+│   ├── Models/                 # ClipItem, NrLayer, TrimSelection
+│   ├── Services/               # EngineLocator, VideoExporter, PrintProcessor, MediaFoundationFrameCodec, RawImage, SettingsStore
+│   ├── Themes/                 # Shared Fluent darkroom styles and tokens
+│   ├── Editor.xaml             # Main window layout
+│   ├── Editor.xaml.cs          # Window chrome, queue, presets, shortcuts
+│   ├── Editor.Playback.cs      # Player, time ruler, trim and scrubbing
+│   ├── Editor.Export.cs        # Batch export and DLSS 5 print workflows
+│   ├── PrintPreviewWindow.*    # Interactive before/after & 1:1 inspection modal
+│   └── ScreenCaptureOverlay.*  # Multi-monitor region capture overlay
+├── Engine.cpp                  # Native C++20 shared-memory adapter (supports --max-frames)
+├── Tests/                      # Unit tests (.NET 8)
+├── scripts/                    # Automated Windows portable ZIP packager
+└── Build.ps1                   # Windows build script
 ```
 
----
+## License
 
-## 📄 License & Third-Party Notices
-
-This project is licensed under **[GPL-3.0](LICENSE.txt)**.  
-See [DEPENDENCIAS.md](DEPENDENCIAS.md) for third-party components and notices bundled in the portable packages.
+Licensed under [GPL-3.0](LICENSE.txt). See [DEPENDENCIAS.md](DEPENDENCIAS.md) for third-party components and notices bundled in the portable packages.

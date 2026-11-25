@@ -86,9 +86,31 @@ var cloned = layer.CloneCollapsed();
 AssertTrue(!cloned.Expanded, "NrLayer clone starts collapsed");
 AssertEqual(layer.Encode(), cloned.Encode(), "NrLayer clone preserves encoding");
 
+AssertEqual(3, NrLayer.Presets.Length, "NrLayer presets count");
+layer.ApplyPreset(NrLayer.Presets[0]);
+AssertNear(0.45, layer.Intensity, "NrLayer preset Sutil intensity");
+AssertNear(0.50, layer.Tone, "NrLayer preset Sutil tone");
+AssertNear(0.50, layer.Structure, "NrLayer preset Sutil structure");
+layer.ResetDefaults();
+AssertNear(1.0, layer.Intensity, "NrLayer ResetDefaults intensity");
+AssertNear(1.0, layer.Tone, "NrLayer ResetDefaults tone");
+AssertNear(1.0, layer.Structure, "NrLayer ResetDefaults structure");
+
 // --- ClipItem ---
 var clipItem = new ClipItem("/videos/demo.mp4");
 AssertEqual("Na fila", clipItem.Subtitle, "ClipItem subtitle without duration");
+AssertEqual("", clipItem.ResolutionBadge, "ClipItem ResolutionBadge empty when unset");
+clipItem.VideoWidth = 3840;
+clipItem.VideoHeight = 2160;
+AssertEqual("4K", clipItem.ResolutionBadge, "ClipItem ResolutionBadge 4K");
+clipItem.VideoHeight = 1440;
+AssertEqual("1440p", clipItem.ResolutionBadge, "ClipItem ResolutionBadge 1440p");
+clipItem.VideoHeight = 1080;
+AssertEqual("1080p", clipItem.ResolutionBadge, "ClipItem ResolutionBadge 1080p");
+clipItem.VideoHeight = 720;
+AssertEqual("720p", clipItem.ResolutionBadge, "ClipItem ResolutionBadge 720p");
+clipItem.VideoHeight = 480;
+AssertEqual("480p", clipItem.ResolutionBadge, "ClipItem ResolutionBadge 480p");
 clipItem.Duration = 125;
 AssertEqual("Na fila · 00:02:05", clipItem.Subtitle, "ClipItem subtitle with full duration");
 clipItem.Trim = new TrimSelection(10, 40);
@@ -116,6 +138,67 @@ AssertEqual("12.25", cliArgs[5], "BuildArguments end");
 AssertEqual("sf-performance", cliArgs[6], "BuildArguments model");
 AssertEqual("0 1.00 1.00 1.00", cliArgs[7], "BuildArguments layer");
 
+var singleFrameArgs = VideoExporter.BuildArguments(request with { MaxFrames = 1 }, "out-tmp.mp4");
+AssertEqual(10, singleFrameArgs.Count, "BuildArguments MaxFrames count");
+AssertEqual("--max-frames", singleFrameArgs[0], "BuildArguments --max-frames flag");
+AssertEqual("1", singleFrameArgs[1], "BuildArguments MaxFrames value");
+AssertEqual("motor/veyra_qml_ui.exe", singleFrameArgs[2], "BuildArguments MaxFrames engine shifted");
+
+// --- PrintProcessor.SafeVideoCaptureTime ---
+AssertNear(0.0, PrintProcessor.SafeVideoCaptureTime(double.NaN, 10.0), "SafeVideoCaptureTime NaN returns 0");
+AssertNear(0.0, PrintProcessor.SafeVideoCaptureTime(5.0, 0.0), "SafeVideoCaptureTime zero duration returns 0");
+AssertNear(0.0, PrintProcessor.SafeVideoCaptureTime(-2.0, 10.0), "SafeVideoCaptureTime negative clamps to 0");
+AssertNear(9.95, PrintProcessor.SafeVideoCaptureTime(10.0, 10.0), "SafeVideoCaptureTime clamps before EOF");
+AssertNear(4.25, PrintProcessor.SafeVideoCaptureTime(4.25, 10.0), "SafeVideoCaptureTime preserves middle timestamp");
+
+// --- RawImage ---
+RawImage MakeSolid(int w, int h, byte b, byte g, byte r, byte a = 255)
+{
+    var data = new byte[w * h * 4];
+    for (var i = 0; i < data.Length; i += 4)
+    {
+        data[i] = b;
+        data[i + 1] = g;
+        data[i + 2] = r;
+        data[i + 3] = a;
+    }
+    return new RawImage(data, w, h);
+}
+
+var oddImg = MakeSolid(321, 241, 10, 20, 30);
+// Distinctive bottom-right edge pixels to verify edge clamping.
+oddImg.Bgra[(240 * 321 + 320) * 4 + 0] = 77;
+oddImg.Bgra[(240 * 321 + 320) * 4 + 1] = 88;
+oddImg.Bgra[(240 * 321 + 320) * 4 + 2] = 99;
+var (oddPadded, oddDidPad) = oddImg.PadForVideoEncoding();
+AssertTrue(oddDidPad, "PadForVideoEncoding pads odd dimensions");
+AssertEqual(322, oddPadded.Width, "PadForVideoEncoding odd width rounded even");
+AssertEqual(242, oddPadded.Height, "PadForVideoEncoding odd height rounded even");
+AssertEqual<byte>(77, oddPadded.Bgra[(241 * 322 + 321) * 4 + 0], "PadForVideoEncoding clamps corner B");
+AssertEqual<byte>(88, oddPadded.Bgra[(241 * 322 + 321) * 4 + 1], "PadForVideoEncoding clamps corner G");
+AssertEqual<byte>(99, oddPadded.Bgra[(241 * 322 + 321) * 4 + 2], "PadForVideoEncoding clamps corner R");
+
+var tinyImg = MakeSolid(50, 40, 11, 22, 33);
+var (tinyPadded, tinyDidPad) = tinyImg.PadForVideoEncoding();
+AssertTrue(tinyDidPad, "PadForVideoEncoding pads tiny dimensions");
+AssertEqual(160, tinyPadded.Width, "PadForVideoEncoding tiny min width 160");
+AssertEqual(120, tinyPadded.Height, "PadForVideoEncoding tiny min height 120");
+
+var croppedBack = oddPadded.Crop(321, 241);
+AssertEqual(321, croppedBack.Width, "Crop restores width");
+AssertEqual(241, croppedBack.Height, "Crop restores height");
+AssertEqual<byte>(77, croppedBack.Bgra[(240 * 321 + 320) * 4 + 0], "Crop preserves edge pixel");
+
+var subRegion = oddPadded.CropRegion(10, 12, 20, 15);
+AssertEqual(20, subRegion.Width, "CropRegion width");
+AssertEqual(15, subRegion.Height, "CropRegion height");
+
+var oversized = MakeSolid(5000, 3000, 40, 50, 60);
+var (downscaled, didDownscale) = oversized.DownscaleIfExceeds();
+AssertTrue(didDownscale, "DownscaleIfExceeds shrinks oversized image");
+AssertTrue(downscaled.Width <= 4096 && downscaled.Height <= 2304, "DownscaleIfExceeds fits within 4K bounds");
+AssertTrue((downscaled.Width & 1) == 0 && (downscaled.Height & 1) == 0, "DownscaleIfExceeds produces even dims");
+
 // --- EngineLocator ---
 var tempDir = Directory.CreateTempSubdirectory("VideoNR-Test-").FullName;
 try
@@ -135,6 +218,66 @@ try
 
     AssertEqual(veyraExe, EngineLocator.FindBundledEngine("NVIDIA", tempDir), "FindBundledEngine finds NVIDIA");
     AssertEqual<string?>(null, EngineLocator.FindBundledEngine("AMD", tempDir), "FindBundledEngine rejects wrong vendor");
+
+    // --- MediaFoundationFrameCodec Live Roundtrip ---
+    if (OperatingSystem.IsWindows())
+    {
+        RawImage MakeQuadrantImage(int w, int h)
+        {
+            var buf = new byte[w * h * 4];
+            for (var y = 0; y < h; y++)
+            {
+                for (var x = 0; x < w; x++)
+                {
+                    var p = (y * w + x) * 4;
+                    var top = y < h / 2;
+                    var left = x < w / 2;
+                    if (top && left) { buf[p] = 0; buf[p + 1] = 0; buf[p + 2] = 255; }           // Red
+                    else if (top && !left) { buf[p] = 0; buf[p + 1] = 255; buf[p + 2] = 0; }     // Green
+                    else if (!top && left) { buf[p] = 255; buf[p + 1] = 0; buf[p + 2] = 0; }     // Blue
+                    else { buf[p] = 255; buf[p + 1] = 255; buf[p + 2] = 255; }                   // White
+                    buf[p + 3] = 255;
+                }
+            }
+            return new RawImage(buf, w, h);
+        }
+
+        void AssertPixelNear(RawImage img, int x, int y, byte expB, byte expG, byte expR, string label)
+        {
+            var p = (y * img.Width + x) * 4;
+            var db = Math.Abs(img.Bgra[p] - expB);
+            var dg = Math.Abs(img.Bgra[p + 1] - expG);
+            var dr = Math.Abs(img.Bgra[p + 2] - expR);
+            AssertTrue(db <= 35 && dg <= 35 && dr <= 35,
+                $"{label} color ({img.Bgra[p]},{img.Bgra[p + 1]},{img.Bgra[p + 2]}) near ({expB},{expG},{expR})");
+            AssertEqual<byte>(255, img.Bgra[p + 3], $"{label} opaque alpha");
+        }
+
+        var quad320 = MakeQuadrantImage(320, 240);
+        var mp4A = Path.Combine(tempDir, "quad-320.mp4");
+        MediaFoundationFrameCodec.EncodeStillVideo(quad320, mp4A, frameCount: 2, fps: 30);
+        var decoded320 = MediaFoundationFrameCodec.DecodeFrame(mp4A, 0);
+        AssertEqual(320, decoded320.Width, "MF roundtrip 320 width");
+        AssertEqual(240, decoded320.Height, "MF roundtrip 240 height");
+        AssertPixelNear(decoded320, 80, 60, 0, 0, 255, "MF 320 TL red");
+        AssertPixelNear(decoded320, 240, 60, 0, 255, 0, "MF 320 TR green");
+        AssertPixelNear(decoded320, 80, 180, 255, 0, 0, "MF 320 BL blue");
+        AssertPixelNear(decoded320, 240, 180, 255, 255, 255, "MF 320 BR white");
+
+        var quadOdd = MakeQuadrantImage(321, 241);
+        var (quadPadded, _) = quadOdd.PadForVideoEncoding();
+        AssertEqual(322, quadPadded.Width, "MF odd padded width");
+        AssertEqual(242, quadPadded.Height, "MF odd padded height");
+        var mp4B = Path.Combine(tempDir, "quad-odd.mp4");
+        MediaFoundationFrameCodec.EncodeStillVideo(quadPadded, mp4B, frameCount: 2, fps: 30);
+        var decodedOdd = MediaFoundationFrameCodec.DecodeFrame(mp4B, 0).Crop(321, 241);
+        AssertEqual(321, decodedOdd.Width, "MF odd cropped width");
+        AssertEqual(241, decodedOdd.Height, "MF odd cropped height");
+        AssertPixelNear(decodedOdd, 80, 60, 0, 0, 255, "MF 321 TL red");
+        AssertPixelNear(decodedOdd, 240, 60, 0, 255, 0, "MF 321 TR green");
+        AssertPixelNear(decodedOdd, 80, 180, 255, 0, 0, "MF 321 BL blue");
+        AssertPixelNear(decodedOdd, 240, 180, 255, 255, 255, "MF 321 BR white");
+    }
 
     // --- SettingsStore ---
     var settingsFile = Path.Combine(tempDir, "prefs", "settings.json");

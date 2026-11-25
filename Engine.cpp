@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <limits>
 #include <locale>
 #include <sstream>
 #include <stdexcept>
@@ -88,7 +89,7 @@ int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
     job.trimStartSeconds = start;
     job.trimEndSeconds = end;
     job.hevc = hevc ? 1u : 0u;
-    job.media.audio.policy = ExportTrackPolicy::All;
+    job.media.audio.policy = maxFrames > 0 ? ExportTrackPolicy::None : ExportTrackPolicy::All;
     wcscpy_s(job.input, input);
     wcscpy_s(job.output, output);
     wcscpy_s(job.temporary, temporary.c_str());
@@ -155,7 +156,21 @@ int run(const wchar_t* engine, const wchar_t* input, const wchar_t* output,
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc < 8 || argc > 8 + static_cast<int>(kMaxNrInstances)) return 2;
+    int argOffset = 1;
+    unsigned maxFrames = 0;
+    if (argc >= 3 && std::wstring(argv[1]) == L"--max-frames") {
+        std::wistringstream stream(argv[2]);
+        stream.imbue(std::locale::classic());
+        long long parsedFrames = 0;
+        if (!(stream >> parsedFrames) || !stream.eof() || parsedFrames <= 0
+            || parsedFrames > static_cast<long long>(std::numeric_limits<unsigned>::max())) {
+            return 2;
+        }
+        maxFrames = static_cast<unsigned>(parsedFrames);
+        argOffset = 3;
+    }
+    const int positional = argc - argOffset;
+    if (positional < 7 || positional > 7 + static_cast<int>(kMaxNrInstances)) return 2;
     try {
         auto readTime = [](const wchar_t* value) {
             std::wistringstream stream(value);
@@ -165,21 +180,21 @@ int wmain(int argc, wchar_t** argv) {
                 throw std::invalid_argument("Invalid time");
             return seconds;
         };
-        const std::wstring codec = argv[4];
+        const std::wstring codec = argv[argOffset + 3];
         if (codec != L"h264" && codec != L"hevc")
             throw std::invalid_argument("Invalid codec");
-        const double start = readTime(argv[5]);
-        const double end = readTime(argv[6]);
+        const double start = readTime(argv[argOffset + 4]);
+        const double end = readTime(argv[argOffset + 5]);
         if (end > 0 && end <= start)
             throw std::invalid_argument("Invalid trim range");
-        const std::wstring model = argv[7];
+        const std::wstring model = argv[argOffset + 6];
         if (model != L"original" && model != L"sf-performance" && model != L"sf-legacy"
             && model != L"amd-small" && model != L"amd-original")
             throw std::invalid_argument("Invalid model");
         const auto runtime = model.starts_with(L"amd-") ? NrRuntime::LmxxfAmd
             : model == L"original" ? NrRuntime::NvidiaOriginal : NrRuntime::Ampere;
         std::vector<NrLayerSettings> layers;
-        for (int index = 8; index < argc; ++index) {
+        for (int index = argOffset + 7; index < argc; ++index) {
             std::wistringstream stream(argv[index]);
             stream.imbue(std::locale::classic());
             NrLayerSettings layer;
@@ -192,7 +207,8 @@ int wmain(int argc, wchar_t** argv) {
             layer.sizePolicy = static_cast<veyra::pipeline::NrSizePolicy>(policy);
             layers.push_back(layer);
         }
-        return run(argv[1], argv[2], argv[3], runtime, layers, codec == L"hevc", 0, start, end);
+        return run(argv[argOffset + 0], argv[argOffset + 1], argv[argOffset + 2],
+            runtime, layers, codec == L"hevc", maxFrames, start, end);
     } catch (const std::exception&) {
         print(L"Falha ao preparar o processamento.");
         return 1;

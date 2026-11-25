@@ -6,8 +6,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>VideoNR</AssemblyName>
-    <AssemblyTitle>Vídeo NR Editor</AssemblyTitle>
-    <Product>Vídeo NR Editor</Product>
-    <Description>Editor de vídeo com renderização neural e exportação offline</Description>
+    <AssemblyTitle>Video NR</AssemblyTitle>
+    <Product>Video NR</Product>
+    <Description>Editor e aprimorador neural de vídeo offline</Description>
+    <ApplicationIcon>Assets\VideoNR.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\VideoNR.ico" />
+  </ItemGroup>
 </Project>

@@ -14,22 +14,27 @@ internal sealed record ExportRequest(
     double TrimEndSeconds,
     string Codec,
     string ModelTag,
-    string[] EncodedLayers);
+    string[] EncodedLayers,
+    int MaxFrames = 0);
 
 internal sealed class VideoExporter
 {
     internal static IReadOnlyList<string> BuildArguments(ExportRequest request, string targetOutputPath)
     {
-        var args = new List<string>(7 + request.EncodedLayers.Length)
+        var prefixCount = request.MaxFrames > 0 ? 2 : 0;
+        var args = new List<string>(prefixCount + 7 + request.EncodedLayers.Length);
+        if (request.MaxFrames > 0)
         {
-            request.EnginePath,
-            request.InputPath,
-            targetOutputPath,
-            request.Codec,
-            request.TrimStartSeconds.ToString("R", CultureInfo.InvariantCulture),
-            request.TrimEndSeconds.ToString("R", CultureInfo.InvariantCulture),
-            request.ModelTag
-        };
+            args.Add("--max-frames");
+            args.Add(request.MaxFrames.ToString(CultureInfo.InvariantCulture));
+        }
+        args.Add(request.EnginePath);
+        args.Add(request.InputPath);
+        args.Add(targetOutputPath);
+        args.Add(request.Codec);
+        args.Add(request.TrimStartSeconds.ToString("R", CultureInfo.InvariantCulture));
+        args.Add(request.TrimEndSeconds.ToString("R", CultureInfo.InvariantCulture));
+        args.Add(request.ModelTag);
         args.AddRange(request.EncodedLayers);
         return args;
     }
@@ -106,6 +111,9 @@ internal sealed class VideoExporter
             await process.WaitForExitAsync();
             if (process.ExitCode == 3 || cancellationToken.IsCancellationRequested)
                 throw new OperationCanceledException(cancellationToken);
+
+            if (process.ExitCode == 2 && request.MaxFrames > 0)
+                throw new IOException("Engine.exe desatualizado (não suporta captura de 1 frame). Recompile com Build.ps1.");
 
             if (process.ExitCode != 0 || new FileInfo(exportTarget) is not { Exists: true, Length: > 0 })
             {

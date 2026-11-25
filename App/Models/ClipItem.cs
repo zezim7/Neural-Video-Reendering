@@ -46,6 +46,56 @@ internal sealed class ClipItem(string path) : INotifyPropertyChanged
         }
     }
 
+    private object? thumbnail;
+    public object? Thumbnail
+    {
+        get => thumbnail;
+        set
+        {
+            if (ReferenceEquals(thumbnail, value)) return;
+            thumbnail = value;
+            Notify(nameof(Thumbnail));
+        }
+    }
+
+    private int videoWidth;
+    public int VideoWidth
+    {
+        get => videoWidth;
+        set
+        {
+            if (videoWidth == value) return;
+            videoWidth = value;
+            Notify(nameof(VideoWidth));
+            Notify(nameof(ResolutionBadge));
+            Notify(nameof(Subtitle));
+        }
+    }
+
+    private int videoHeight;
+    public int VideoHeight
+    {
+        get => videoHeight;
+        set
+        {
+            if (videoHeight == value) return;
+            videoHeight = value;
+            Notify(nameof(VideoHeight));
+            Notify(nameof(ResolutionBadge));
+            Notify(nameof(Subtitle));
+        }
+    }
+
+    public string ResolutionBadge => VideoHeight switch
+    {
+        <= 0 => "",
+        >= 2160 => "4K",
+        >= 1440 => "1440p",
+        >= 1080 => "1080p",
+        >= 720 => "720p",
+        _ => $"{VideoHeight}p"
+    };
+
     public string Subtitle
     {
         get

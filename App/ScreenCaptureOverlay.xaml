@@ -1,0 +1,57 @@
+<Window x:Class="VideoNR.ScreenCaptureOverlay"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Capturar tela"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="False"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{StaticResource ViewportBg}"
+        Foreground="{StaticResource TextPrimary}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12"
+        Icon="Assets/VideoNR.ico"
+        PreviewKeyDown="OverlayKeyDown">
+    <Grid x:Name="RootGrid">
+        <!-- Frozen desktop surface -->
+        <Grid x:Name="CaptureSurface" Cursor="Cross"
+              MouseLeftButtonDown="SurfaceMouseDown"
+              MouseMove="SurfaceMouseMove"
+              MouseLeftButtonUp="SurfaceMouseUp"
+              MouseRightButtonUp="SurfaceRightClick"
+              LostMouseCapture="SurfaceLostCapture">
+            <Image x:Name="ScreenshotImage" Stretch="Fill" SnapsToDevicePixels="True"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+            <Path x:Name="ScrimPath" Fill="{StaticResource ScrimBg}" IsHitTestVisible="False"/>
+            <Canvas IsHitTestVisible="False">
+                <Border x:Name="SelectionBorder" BorderBrush="{StaticResource Accent}" BorderThickness="2"
+                        Background="Transparent" Visibility="Collapsed"/>
+                <Border x:Name="DimensionBadge" Background="{StaticResource OverlayBg}" BorderBrush="{StaticResource Accent}"
+                        BorderThickness="1" CornerRadius="3" Padding="8,3" Visibility="Collapsed">
+                    <TextBlock x:Name="DimensionText" Style="{StaticResource MonoText}" FontSize="11"
+                               FontWeight="SemiBold" Foreground="{StaticResource AccentHover}"/>
+                </Border>
+            </Canvas>
+        </Grid>
+
+        <!-- Floating capture toolbar -->
+        <Canvas IsHitTestVisible="True">
+            <Border x:Name="ToolbarBorder" Background="#EE1B1B1B" BorderBrush="{StaticResource BorderControl}"
+                    BorderThickness="1" CornerRadius="4" Padding="10,6" Cursor="Arrow">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE7A8;" FontSize="12"
+                               Foreground="{StaticResource Accent}" Margin="2,0,8,0"/>
+                    <TextBlock Text="Arraste uma área para aplicar DLSS 5 / NR"
+                               Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <Button Content="Monitor atual" Style="{StaticResource PrimaryButton}" Click="CaptureMonitorClick"
+                            Padding="10,5" Margin="0,0,6,0" ToolTip="Capturar o monitor atual inteiro (Enter)"/>
+                    <Button Content="Tela inteira" Click="CaptureAllClick" Padding="10,5"
+                            Margin="0,0,6,0" ToolTip="Capturar toda a área virtual de monitores"/>
+                    <Button Content="Cancelar" Click="CancelClick" Padding="10,5"
+                            ToolTip="Cancelar captura (Esc)"/>
+                </StackPanel>
+            </Border>
+        </Canvas>
+    </Grid>
+</Window>
