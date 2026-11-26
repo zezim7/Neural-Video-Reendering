@@ -170,6 +170,12 @@ public partial class Editor
     {
         if (busy) return;
 
+        if (playing && ready && expectedSeekSourcePos is null && activePlaybackSlice is { } liveSlice)
+        {
+            var localOffset = Math.Max(0, Player.Position.TotalSeconds - liveSlice.SourceStart);
+            timelinePosition = Math.Clamp(liveSlice.TimelineStart + localOffset, liveSlice.TimelineStart, liveSlice.TimelineEnd);
+        }
+
         // If selected segment covers timelinePosition and can split, split it; else split all unlocked under playhead
         Guid? onlyId = null;
         if (SelectedSegment is { } sel
@@ -901,6 +907,12 @@ public partial class Editor
         Canvas.SetLeft(Playhead, x - 5.5);
         Canvas.SetLeft(RulerPlayheadCap, x - 5.5);
         TimeLabel.Text = $"{TrimSelection.Format(timelinePosition, true)} / {TrimSelection.Format(total, true)}";
+        if (IsInitialized)
+        {
+            SplitButton.IsEnabled = !busy && CanSplitAt(timelinePosition);
+            var hasEngine = !busy && adapterPath is not null && EnginePath is not null;
+            FramePrintButton.IsEnabled = hasEngine && (sequence.LocateCompositionAt(timelinePosition) is not null || clip is not null);
+        }
     }
 
     private void RefreshTrimFields()
