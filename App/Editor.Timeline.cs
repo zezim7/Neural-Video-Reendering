@@ -47,8 +47,10 @@ public partial class Editor
     private double dragInitialTimelineStart;
     private double dragInitialSourceStart;
     private double dragInitialSourceEnd;
+    private double dragInitialPlayhead;
     private int dragInitialTrackIndex;
     private bool dragUndoPushed;
+    private bool dragMutated;
     private bool razorToolActive;
     private bool hasUserZoomed;
     private bool syncingZoomSlider;
@@ -201,15 +203,16 @@ public partial class Editor
         }
 
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         var splits = sequence.SplitAllAt(timelinePosition, onlyId);
         if (splits.Count == 0)
         {
-            _ = history.TryUndo(sequence, selectedSegmentId, out _);
             Status.Text = "Posicione a agulha dentro de um trecho desbloqueado para dividir.";
             return;
         }
 
+        history.PushSnapshot(before, beforeSelected);
         selectedSegmentId = splits[0].Right.Id;
         SyncInspectorToCurrentScope();
         RefreshTrimFields();
@@ -229,10 +232,12 @@ public partial class Editor
         }
 
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         var copy = sequence.DuplicateSegment(seg.Id);
         if (copy is null) return;
 
+        history.PushSnapshot(before, beforeSelected);
         selectedSegmentId = copy.Id;
         SeekTimeline(copy.TimelineStart, autoPlay: false);
         SyncInspectorToCurrentScope();
@@ -246,6 +251,7 @@ public partial class Editor
         if (busy || SelectedSegment is not { } seg) return;
         history.PushUndo(sequence, selectedSegmentId);
         seg.Enabled = !seg.Enabled;
+        SyncTimelinePlaybackToPlayhead();
         UpdateControls();
         Status.Text = seg.Enabled
             ? $"Clipe \"{seg.SourceName}\" reativado."
@@ -256,15 +262,16 @@ public partial class Editor
     {
         if (busy || sequence.IsEmpty) return;
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         var moved = sequence.CloseAllGaps();
         if (moved == 0)
         {
-            _ = history.TryUndo(sequence, selectedSegmentId, out _);
             Status.Text = "Não há espaços vazios para fechar.";
             return;
         }
 
+        history.PushSnapshot(before, beforeSelected);
         SyncAfterSequenceMutation();
         Status.Text = $"Espaços fechados ({moved} clipe(s) alinhado(s)).";
     }
@@ -282,9 +289,12 @@ public partial class Editor
         }
 
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         var removedName = seg.SourceName;
-        sequence.RemoveSegment(seg.Id, ripple);
+        if (!sequence.RemoveSegment(seg.Id, ripple)) return;
+
+        history.PushSnapshot(before, beforeSelected);
         selectedSegmentId = null;
 
         SyncAfterSequenceMutation();
@@ -298,9 +308,11 @@ public partial class Editor
     private void AddTrackClick(object sender, RoutedEventArgs e)
     {
         if (busy || sequence.TrackCount >= TimelineSequence.MaxTracks) return;
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         var added = sequence.AddTrack();
         if (added is null) return;
+        history.PushSnapshot(before, beforeSelected);
         activeTrackIndex = added.Index;
         UpdateControls();
         Status.Text = $"Camada {added.Name} adicionada.";
@@ -309,13 +321,14 @@ public partial class Editor
     private void RemoveTrackClick(object sender, RoutedEventArgs e)
     {
         if (busy) return;
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         if (!sequence.RemoveTopEmptyTrack())
         {
-            _ = history.TryUndo(sequence, selectedSegmentId, out _);
             Status.Text = "Só é possível remover a faixa superior quando está vazia (mínimo V1 e V2).";
             return;
         }
+        history.PushSnapshot(before, beforeSelected);
         activeTrackIndex = Math.Clamp(activeTrackIndex, 0, sequence.TrackCount - 1);
         UpdateControls();
         Status.Text = "Faixa superior removida.";
@@ -929,7 +942,6 @@ public partial class Editor
             TrimLabel.Text = "";
         }
         refreshingFields = false;
-        DrawTimeline();
     }
 
     // Ruler scrub
@@ -1062,10 +1074,12 @@ public partial class Editor
                 : rawCut;
 
             Pause();
-            history.PushUndo(sequence, selectedSegmentId);
+            var before = sequence.CaptureSnapshot();
+            var beforeSelected = selectedSegmentId;
             var split = sequence.SplitSegmentAt(hitSeg.Id, cutTime);
             if (split is { } pair)
             {
+                history.PushSnapshot(before, beforeSelected);
                 selectedSegmentId = pair.Right.Id;
                 timelinePosition = cutTime;
                 SyncInspectorToCurrentScope();
@@ -1075,7 +1089,6 @@ public partial class Editor
             }
             else
             {
-                _ = history.TryUndo(sequence, selectedSegmentId, out _);
                 Status.Text = "Clique mais para o centro do clipe para cortar.";
             }
             e.Handled = true;
@@ -1085,6 +1098,7 @@ public partial class Editor
         Pause();
         trackDragOrigin = pt;
         dragUndoPushed = false;
+        dragMutated = false;
 
         var (seg, hitKind) = HitTestTrackPoint(pt);
         if (seg is not null)
@@ -1094,6 +1108,7 @@ public partial class Editor
             dragInitialTimelineStart = seg.TimelineStart;
             dragInitialSourceStart = seg.SourceStart;
             dragInitialSourceEnd = seg.SourceEnd;
+            dragInitialPlayhead = timelinePosition;
             dragInitialTrackIndex = seg.TrackIndex;
             trackDragMode = hitKind == TrackDragMode.MoveSegment && (busy || sequence.IsTrackLocked(seg.TrackIndex))
                 ? TrackDragMode.Scrub
@@ -1155,24 +1170,28 @@ public partial class Editor
         if (trackDragMode is TrackDragMode.TrimLeft or TrackDragMode.TrimRight)
         {
             var isStart = trackDragMode == TrackDragMode.TrimLeft;
-            if (!dragUndoPushed && Math.Abs(deltaX) > 2)
-            {
-                history.PushUndo(sequence, selectedSegmentId);
-                dragUndoPushed = true;
-            }
+            if (!dragUndoPushed && Math.Abs(deltaX) <= 2)
+                return;
 
             var targetTimeRaw = isStart
                 ? dragInitialTimelineStart + rawDeltaSeconds
                 : dragInitialTimelineStart + (dragInitialSourceEnd - dragInitialSourceStart) + rawDeltaSeconds;
             var targetTime = snapEnabled
-                ? sequence.SnapTime(targetTimeRaw, SnapThresholdSeconds(), timelinePosition, seg.Id)
+                ? sequence.SnapTime(targetTimeRaw, SnapThresholdSeconds(), dragInitialPlayhead, seg.Id)
                 : targetTimeRaw;
             ShowSnapGuideIfMatched(targetTimeRaw, targetTime);
 
             var currentEdgeTimeline = isStart ? seg.TimelineStart : seg.TimelineEnd;
             var neededDelta = targetTime - currentEdgeTimeline;
+            var beforeSnap = !dragUndoPushed ? sequence.CaptureSnapshot() : null;
             if (sequence.TrimEdge(seg.Id, isStart, neededDelta))
             {
+                if (!dragUndoPushed && beforeSnap is not null)
+                {
+                    history.PushSnapshot(beforeSnap, selectedSegmentId);
+                    dragUndoPushed = true;
+                }
+                dragMutated = true;
                 var newPlayhead = isStart ? seg.TimelineStart : seg.TimelineEnd;
                 timelinePosition = newPlayhead;
                 LoadMediaForPath(seg.SourcePath, isStart ? seg.SourceStart : seg.SourceEnd, autoPlay: false);
@@ -1193,18 +1212,12 @@ public partial class Editor
             if (Math.Abs(deltaX) < 4 && Math.Abs(pt.Y - trackDragOrigin.Y) < 4 && !dragUndoPushed)
                 return;
 
-            if (!dragUndoPushed)
-            {
-                history.PushUndo(sequence, selectedSegmentId);
-                dragUndoPushed = true;
-            }
-
             var desiredStartRaw = Math.Max(0, dragInitialTimelineStart + rawDeltaSeconds);
             var desiredStart = desiredStartRaw;
             if (snapEnabled)
             {
-                var snapStart = sequence.SnapTime(desiredStartRaw, SnapThresholdSeconds(), timelinePosition, seg.Id);
-                var snapEnd = sequence.SnapTime(desiredStartRaw + seg.Duration, SnapThresholdSeconds(), timelinePosition, seg.Id);
+                var snapStart = sequence.SnapTime(desiredStartRaw, SnapThresholdSeconds(), dragInitialPlayhead, seg.Id);
+                var snapEnd = sequence.SnapTime(desiredStartRaw + seg.Duration, SnapThresholdSeconds(), dragInitialPlayhead, seg.Id);
                 if (Math.Abs(snapStart - desiredStartRaw) <= Math.Abs(snapEnd - (desiredStartRaw + seg.Duration)))
                 {
                     desiredStart = snapStart;
@@ -1222,10 +1235,16 @@ public partial class Editor
             }
 
             var targetTrack = YToTrackIndex(pt.Y);
+            var beforeSnap = !dragUndoPushed ? sequence.CaptureSnapshot() : null;
             if (sequence.MoveSegmentTo(seg.Id, desiredStart, targetTrack))
             {
+                if (!dragUndoPushed && beforeSnap is not null)
+                {
+                    history.PushSnapshot(beforeSnap, selectedSegmentId);
+                    dragUndoPushed = true;
+                }
+                dragMutated = true;
                 activeTrackIndex = seg.TrackIndex;
-                timelinePosition = seg.TimelineStart;
                 RefreshTrimFields();
                 UpdateControls();
             }
@@ -1239,17 +1258,22 @@ public partial class Editor
         if (trackDragMode == TrackDragMode.Pan || trackDragMode == TrackDragMode.None) return;
 
         // Pure click on a clip body without dragging seeks playhead cleanly
-        if (trackDragMode == TrackDragMode.MoveSegment && !dragUndoPushed)
+        if (trackDragMode == TrackDragMode.MoveSegment && !dragMutated)
         {
             var rawT = XToTime(e.GetPosition(TimelineTrack).X);
             var snapped = snapEnabled ? sequence.SnapTime(rawT, SnapThresholdSeconds()) : rawT;
             SeekTimeline(snapped, autoPlay: false);
+        }
+        else if (dragMutated && trackDragMode is TrackDragMode.TrimLeft or TrackDragMode.TrimRight or TrackDragMode.MoveSegment)
+        {
+            SyncTimelinePlaybackToPlayhead();
         }
 
         ClearDragVisuals();
         trackDragMode = TrackDragMode.None;
         dragSegmentId = Guid.Empty;
         dragUndoPushed = false;
+        dragMutated = false;
         if (TimelineTrack.IsMouseCaptured)
             TimelineTrack.ReleaseMouseCapture();
         UpdateControls();
@@ -1262,6 +1286,13 @@ public partial class Editor
         trackDragMode = TrackDragMode.None;
         dragSegmentId = Guid.Empty;
         dragUndoPushed = false;
+        dragMutated = false;
+    }
+
+    private void TrackMouseLeave(object sender, MouseEventArgs e)
+    {
+        if (trackDragMode == TrackDragMode.None)
+            RazorCursorLine.Visibility = Visibility.Collapsed;
     }
 
     private void ClearDragVisuals()
@@ -1360,6 +1391,12 @@ public partial class Editor
         }
     }
 
+    private void TimelineDragLeave(object sender, DragEventArgs e)
+    {
+        DropSlotHighlight.Visibility = Visibility.Collapsed;
+        SnapGuideLine.Visibility = Visibility.Collapsed;
+    }
+
     private void TimelineDrop(object sender, DragEventArgs e)
     {
         DropSlotHighlight.Visibility = Visibility.Collapsed;
@@ -1413,16 +1450,17 @@ public partial class Editor
         }
 
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         if (sequence.SetSourceEdge(seg.Id, isStart, time))
         {
+            history.PushSnapshot(before, beforeSelected);
             SeekTimeline(isStart ? seg.TimelineStart : seg.TimelineEnd, autoPlay: false);
             RefreshTrimFields();
             UpdateControls();
         }
         else
         {
-            _ = history.TryUndo(sequence, selectedSegmentId, out _);
             RefreshTrimFields();
         }
     }
@@ -1434,16 +1472,14 @@ public partial class Editor
         if (Math.Abs(delta) < 1e-4) return;
 
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         if (sequence.TrimEdge(seg.Id, isStart: true, delta))
         {
+            history.PushSnapshot(before, beforeSelected);
             SeekTimeline(seg.TimelineStart, autoPlay: false);
             RefreshTrimFields();
             UpdateControls();
-        }
-        else
-        {
-            _ = history.TryUndo(sequence, selectedSegmentId, out _);
         }
     }
 
@@ -1454,16 +1490,14 @@ public partial class Editor
         if (Math.Abs(delta) < 1e-4) return;
 
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         if (sequence.TrimEdge(seg.Id, isStart: false, delta))
         {
+            history.PushSnapshot(before, beforeSelected);
             SeekTimeline(seg.TimelineEnd, autoPlay: false);
             RefreshTrimFields();
             UpdateControls();
-        }
-        else
-        {
-            _ = history.TryUndo(sequence, selectedSegmentId, out _);
         }
     }
 
@@ -1477,16 +1511,15 @@ public partial class Editor
         }
 
         Pause();
-        history.PushUndo(sequence, selectedSegmentId);
+        var before = sequence.CaptureSnapshot();
+        var beforeSelected = selectedSegmentId;
         var changed = false;
         changed |= sequence.SetSourceEdge(seg.Id, isStart: true, 0);
         changed |= sequence.SetSourceEdge(seg.Id, isStart: false, seg.SourceDuration);
         if (!changed)
-        {
-            _ = history.TryUndo(sequence, selectedSegmentId, out _);
             return;
-        }
 
+        history.PushSnapshot(before, beforeSelected);
         SeekTimeline(seg.TimelineStart, autoPlay: false);
         RefreshTrimFields();
         UpdateControls();

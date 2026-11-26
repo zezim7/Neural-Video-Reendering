@@ -8,6 +8,7 @@ internal static class MediaFoundationInterop
     internal const uint MfApiVersion = 0x00020070;
     internal const uint MfStartupNoSocket = 0x00000001;
     internal const uint MfSourceReaderAllStreams = 0xFFFFFFFE;
+    internal const uint MfSourceReaderAnyStream = 0xFFFFFFFE;
     internal const uint MfSourceReaderFirstVideoStream = 0xFFFFFFFC;
     internal const uint MfSourceReaderFirstAudioStream = 0xFFFFFFFD;
     internal const uint MfSourceReaderMediaSource = 0xFFFFFFFF;

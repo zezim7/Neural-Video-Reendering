@@ -333,6 +333,159 @@ try
         var mergedEndFrame = MediaFoundationFrameCodec.DecodeFrame(mergedMp4, 0.75);
         AssertPixelNear(mergedStartFrame, 80, 60, 0, 0, 230, "VideoConcatenator first half red");
         AssertPixelNear(mergedEndFrame, 80, 60, 230, 0, 0, "VideoConcatenator second half blue (letterboxed)");
+
+        // --- VideoConcatenator Live Roundtrip (Interleaved Audio+Video + Silent Video) ---
+        void EncodeAudioVideoMp4(RawImage img, string outPath, int frameCount, uint fps)
+        {
+            const uint ch = 2, rate = 48_000, bits = 16;
+            const uint align = ch * (bits / 8);
+            const uint pcmBps = rate * align;
+            MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFStartup(MediaFoundationInterop.MfApiVersion, MediaFoundationInterop.MfStartupNoSocket), "Test.MFStartup");
+            MediaFoundationInterop.IMFAttributes? attrs = null;
+            MediaFoundationInterop.IMFSinkWriter? writer = null;
+            try
+            {
+                MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateAttributes(out attrs, 1), "Test.MFCreateAttributes");
+                _ = attrs.SetUINT32(in MediaFoundationInterop.MfReadWriteEnableHardwareTransforms, 0);
+                MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateSinkWriterFromURL(outPath, IntPtr.Zero, attrs, out writer), "Test.SinkWriter");
+
+                MediaFoundationInterop.IMFMediaType? vOut = null;
+                MediaFoundationInterop.IMFMediaType? vIn = null;
+                MediaFoundationInterop.IMFMediaType? aOut = null;
+                MediaFoundationInterop.IMFMediaType? aIn = null;
+                uint vIdx, aIdx;
+                try
+                {
+                    var packedSize = MediaFoundationInterop.Pack2UInt32((uint)img.Width, (uint)img.Height);
+                    var packedRate = MediaFoundationInterop.Pack2UInt32(fps, 1);
+                    var packedPar = MediaFoundationInterop.Pack2UInt32(1, 1);
+
+                    MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateMediaType(out vOut), "vOut");
+                    MediaFoundationInterop.CheckHr(vOut.SetGUID(in MediaFoundationInterop.MfMtMajorType, in MediaFoundationInterop.MfMediaTypeVideo), "vOut.major");
+                    MediaFoundationInterop.CheckHr(vOut.SetGUID(in MediaFoundationInterop.MfMtSubtype, in MediaFoundationInterop.MfVideoFormatH264), "vOut.sub");
+                    MediaFoundationInterop.CheckHr(vOut.SetUINT32(in MediaFoundationInterop.MfMtAvgBitrate, 2_000_000), "vOut.br");
+                    MediaFoundationInterop.CheckHr(vOut.SetUINT32(in MediaFoundationInterop.MfMtInterlaceMode, MediaFoundationInterop.MfVideoInterlaceProgressive), "vOut.int");
+                    MediaFoundationInterop.CheckHr(vOut.SetUINT64(in MediaFoundationInterop.MfMtFrameSize, packedSize), "vOut.sz");
+                    MediaFoundationInterop.CheckHr(vOut.SetUINT64(in MediaFoundationInterop.MfMtFrameRate, packedRate), "vOut.fps");
+                    MediaFoundationInterop.CheckHr(vOut.SetUINT64(in MediaFoundationInterop.MfMtPixelAspectRatio, packedPar), "vOut.par");
+                    MediaFoundationInterop.CheckHr(writer.AddStream(vOut, out vIdx), "writer.AddStream(v)");
+
+                    MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateMediaType(out vIn), "vIn");
+                    MediaFoundationInterop.CheckHr(vIn.SetGUID(in MediaFoundationInterop.MfMtMajorType, in MediaFoundationInterop.MfMediaTypeVideo), "vIn.major");
+                    MediaFoundationInterop.CheckHr(vIn.SetGUID(in MediaFoundationInterop.MfMtSubtype, in MediaFoundationInterop.MfVideoFormatRgb32), "vIn.sub");
+                    MediaFoundationInterop.CheckHr(vIn.SetUINT32(in MediaFoundationInterop.MfMtInterlaceMode, MediaFoundationInterop.MfVideoInterlaceProgressive), "vIn.int");
+                    MediaFoundationInterop.CheckHr(vIn.SetUINT64(in MediaFoundationInterop.MfMtFrameSize, packedSize), "vIn.sz");
+                    MediaFoundationInterop.CheckHr(vIn.SetUINT64(in MediaFoundationInterop.MfMtFrameRate, packedRate), "vIn.fps");
+                    MediaFoundationInterop.CheckHr(vIn.SetUINT64(in MediaFoundationInterop.MfMtPixelAspectRatio, packedPar), "vIn.par");
+                    MediaFoundationInterop.CheckHr(vIn.SetUINT32(in MediaFoundationInterop.MfMtDefaultStride, (uint)img.Stride), "vIn.stride");
+                    MediaFoundationInterop.CheckHr(writer.SetInputMediaType(vIdx, vIn, null), "writer.SetInput(v)");
+
+                    MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateMediaType(out aOut), "aOut");
+                    MediaFoundationInterop.CheckHr(aOut.SetGUID(in MediaFoundationInterop.MfMtMajorType, in MediaFoundationInterop.MfMediaTypeAudio), "aOut.major");
+                    MediaFoundationInterop.CheckHr(aOut.SetGUID(in MediaFoundationInterop.MfMtSubtype, in MediaFoundationInterop.MfAudioFormatAac), "aOut.sub");
+                    MediaFoundationInterop.CheckHr(aOut.SetUINT32(in MediaFoundationInterop.MfMtAudioNumChannels, ch), "aOut.ch");
+                    MediaFoundationInterop.CheckHr(aOut.SetUINT32(in MediaFoundationInterop.MfMtAudioSamplesPerSecond, rate), "aOut.rate");
+                    MediaFoundationInterop.CheckHr(aOut.SetUINT32(in MediaFoundationInterop.MfMtAudioBitsPerSample, bits), "aOut.bits");
+                    MediaFoundationInterop.CheckHr(aOut.SetUINT32(in MediaFoundationInterop.MfMtAudioAvgBytesPerSecond, 16_000), "aOut.bps");
+                    MediaFoundationInterop.CheckHr(writer.AddStream(aOut, out aIdx), "writer.AddStream(a)");
+
+                    MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateMediaType(out aIn), "aIn");
+                    MediaFoundationInterop.CheckHr(aIn.SetGUID(in MediaFoundationInterop.MfMtMajorType, in MediaFoundationInterop.MfMediaTypeAudio), "aIn.major");
+                    MediaFoundationInterop.CheckHr(aIn.SetGUID(in MediaFoundationInterop.MfMtSubtype, in MediaFoundationInterop.MfAudioFormatPcm), "aIn.sub");
+                    MediaFoundationInterop.CheckHr(aIn.SetUINT32(in MediaFoundationInterop.MfMtAudioNumChannels, ch), "aIn.ch");
+                    MediaFoundationInterop.CheckHr(aIn.SetUINT32(in MediaFoundationInterop.MfMtAudioSamplesPerSecond, rate), "aIn.rate");
+                    MediaFoundationInterop.CheckHr(aIn.SetUINT32(in MediaFoundationInterop.MfMtAudioBitsPerSample, bits), "aIn.bits");
+                    MediaFoundationInterop.CheckHr(aIn.SetUINT32(in MediaFoundationInterop.MfMtAudioBlockAlignment, align), "aIn.align");
+                    MediaFoundationInterop.CheckHr(aIn.SetUINT32(in MediaFoundationInterop.MfMtAudioAvgBytesPerSecond, pcmBps), "aIn.bps");
+                    MediaFoundationInterop.CheckHr(writer.SetInputMediaType(aIdx, aIn, null), "writer.SetInput(a)");
+                }
+                finally
+                {
+                    MediaFoundationInterop.ReleaseCom(vOut);
+                    MediaFoundationInterop.ReleaseCom(vIn);
+                    MediaFoundationInterop.ReleaseCom(aOut);
+                    MediaFoundationInterop.ReleaseCom(aIn);
+                }
+
+                MediaFoundationInterop.CheckHr(writer.BeginWriting(), "Test.BeginWriting");
+                var frameDur = 10_000_000L / fps;
+                for (var f = 0; f < frameCount; f++)
+                {
+                    MediaFoundationInterop.IMFMediaBuffer? buf = null;
+                    MediaFoundationInterop.IMFSample? smp = null;
+                    var locked = false;
+                    try
+                    {
+                        var bytes = (uint)img.Bgra.Length;
+                        MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateMemoryBuffer(bytes, out buf), "buf");
+                        MediaFoundationInterop.CheckHr(buf.Lock(out var ptr, out _, out _), "lock");
+                        locked = true;
+                        System.Runtime.InteropServices.Marshal.Copy(img.Bgra, 0, ptr, img.Bgra.Length);
+                        MediaFoundationInterop.CheckHr(buf.Unlock(), "unlock");
+                        locked = false;
+                        MediaFoundationInterop.CheckHr(buf.SetCurrentLength(bytes), "len");
+                        MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateSample(out smp), "smp");
+                        MediaFoundationInterop.CheckHr(smp.AddBuffer(buf), "addbuf");
+                        MediaFoundationInterop.CheckHr(smp.SetSampleTime(f * frameDur), "pts");
+                        MediaFoundationInterop.CheckHr(smp.SetSampleDuration(frameDur), "dur");
+                        MediaFoundationInterop.CheckHr(writer.WriteSample(vIdx, smp), "writeV");
+                    }
+                    finally
+                    {
+                        if (locked && buf is not null) _ = buf.Unlock();
+                        MediaFoundationInterop.ReleaseCom(smp);
+                        MediaFoundationInterop.ReleaseCom(buf);
+                    }
+                }
+
+                var totalAudioHns = frameCount * frameDur;
+                var totalSamples = (uint)(totalAudioHns * rate / 10_000_000L);
+                var audioBytes = totalSamples * align;
+                MediaFoundationInterop.IMFMediaBuffer? abuf = null;
+                MediaFoundationInterop.IMFSample? asmp = null;
+                var aLocked = false;
+                try
+                {
+                    MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateMemoryBuffer(audioBytes, out abuf), "abuf");
+                    MediaFoundationInterop.CheckHr(abuf.Lock(out var aptr, out _, out _), "alock");
+                    aLocked = true;
+                    System.Runtime.InteropServices.Marshal.Copy(new byte[audioBytes], 0, aptr, (int)audioBytes);
+                    MediaFoundationInterop.CheckHr(abuf.Unlock(), "aunlock");
+                    aLocked = false;
+                    MediaFoundationInterop.CheckHr(abuf.SetCurrentLength(audioBytes), "alen");
+                    MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateSample(out asmp), "asmp");
+                    MediaFoundationInterop.CheckHr(asmp.AddBuffer(abuf), "addabuf");
+                    MediaFoundationInterop.CheckHr(asmp.SetSampleTime(0), "apts");
+                    MediaFoundationInterop.CheckHr(asmp.SetSampleDuration(totalAudioHns), "adur");
+                    MediaFoundationInterop.CheckHr(writer.WriteSample(aIdx, asmp), "writeA");
+                }
+                finally
+                {
+                    if (aLocked && abuf is not null) _ = abuf.Unlock();
+                    MediaFoundationInterop.ReleaseCom(asmp);
+                    MediaFoundationInterop.ReleaseCom(abuf);
+                }
+
+                MediaFoundationInterop.CheckHr(writer.Finalize(), "Test.Finalize");
+            }
+            finally
+            {
+                MediaFoundationInterop.ReleaseCom(writer);
+                MediaFoundationInterop.ReleaseCom(attrs);
+                _ = MediaFoundationInterop.MFShutdown();
+            }
+        }
+
+        var greenImg = MakeSolid(160, 120, 0, 220, 0);
+        var segAvMp4 = Path.Combine(tempDir, "seg-av.mp4");
+        var mergedMixedMp4 = Path.Combine(tempDir, "merged-mixed-av.mp4");
+        EncodeAudioVideoMp4(greenImg, segAvMp4, frameCount: 15, fps: 30);
+        VideoConcatenator.Concatenate([seg1Mp4, segAvMp4], mergedMixedMp4, preferHevc: false, null, CancellationToken.None);
+        var mixedProbe = MediaFoundationFrameCodec.TryProbe(mergedMixedMp4);
+        AssertTrue(mixedProbe is { HasAudio: true }, "VideoConcatenator interleaved pass preserves audio across silent+A/V segments");
+        AssertTrue(mixedProbe!.DurationSeconds >= 0.85, "VideoConcatenator mixed A/V duration >= 0.85s");
+        AssertPixelNear(MediaFoundationFrameCodec.DecodeFrame(mergedMixedMp4, 0.05), 80, 60, 0, 0, 230, "VideoConcatenator mixed A/V first half red");
+        AssertPixelNear(MediaFoundationFrameCodec.DecodeFrame(mergedMixedMp4, 0.75), 80, 60, 0, 220, 0, "VideoConcatenator mixed A/V second half green");
     }
 
     // --- Multi-Track TimelineSequence & TimelineHistory ---
@@ -471,6 +624,27 @@ try
     AssertEqual(ovV1.Id, nextWithEofOvershoot!.Value.Segment.Id, "EOF overshoot returns V1 remainder");
 
     AssertTrue(overlapSeq.FindNextCompositionSlice(ovSlices[1]) is null, "FindNextCompositionSlice returns null at true timeline end");
+
+    // --- Regression: failed/no-op mutations must not pollute Undo or wipe Redo ---
+    var noOpSeq = new TimelineSequence();
+    var noOpHist = new TimelineHistory();
+    var baseSeg = noOpSeq.AppendClip("/videos/base.mp4", 10.0, colorIndex: 0, trackIndex: 0);
+    var beforeDup = noOpSeq.CaptureSnapshot();
+    var dupSeg = noOpSeq.DuplicateSegment(baseSeg.Id);
+    AssertTrue(dupSeg is not null, "No-op setup duplicate succeeds");
+    noOpHist.PushSnapshot(beforeDup, baseSeg.Id);
+    AssertTrue(noOpHist.TryUndo(noOpSeq, dupSeg!.Id, out _), "No-op setup Undo populates Redo stack");
+    AssertTrue(!noOpHist.CanUndo && noOpHist.CanRedo, "Undo empty, Redo populated");
+
+    var noOpSnap = noOpSeq.CaptureSnapshot();
+    AssertTrue(noOpSeq.SplitAllAt(0.01).Count == 0, "No-op split near start fails cleanly");
+    AssertEqual(0, noOpSeq.CloseAllGaps(), "No-op CloseAllGaps finds nothing");
+    AssertTrue(!noOpSeq.RemoveTopEmptyTrack(), "No-op RemoveTopEmptyTrack respects minimum 2 tracks");
+    _ = noOpSnap; // not pushed on failed ops
+    AssertTrue(!noOpHist.CanUndo, "Failed no-ops do not push fake Undo entries");
+    AssertTrue(noOpHist.CanRedo, "Failed no-ops do not wipe existing Redo stack");
+    AssertTrue(noOpHist.TryRedo(noOpSeq, baseSeg.Id, out _), "Existing Redo still succeeds after failed no-ops");
+    AssertEqual(2, noOpSeq.Count, "Redo restores 2 segments cleanly");
 
     // --- SettingsStore ---
     var settingsFile = Path.Combine(tempDir, "prefs", "settings.json");

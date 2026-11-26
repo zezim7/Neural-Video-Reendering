@@ -426,10 +426,10 @@
 
                                     <ScrollViewer x:Name="TimelineScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                                   ScrollChanged="TimelineScrollChanged" PreviewMouseWheel="TimelineMouseWheel" SizeChanged="ResizeTimeline"
-                                                  AllowDrop="True" DragOver="TimelineDragOver" Drop="TimelineDrop">
+                                                  AllowDrop="True" DragOver="TimelineDragOver" DragLeave="TimelineDragLeave" Drop="TimelineDrop">
                                         <Grid x:Name="TimelineContentHost" HorizontalAlignment="Left" VerticalAlignment="Top">
                                             <Canvas x:Name="TimelineTrack" Background="Transparent" ClipToBounds="True"
-                                                    MouseLeftButtonDown="TrackMouseDown" MouseMove="TrackMouseMove"
+                                                    MouseLeftButtonDown="TrackMouseDown" MouseMove="TrackMouseMove" MouseLeave="TrackMouseLeave"
                                                     MouseLeftButtonUp="TrackMouseUp" LostMouseCapture="TrackLostCapture"
                                                     PreviewMouseDown="TrackPreviewMouseDown" PreviewMouseMove="TrackPreviewMouseMove" PreviewMouseUp="TrackPreviewMouseUp">
                                                 <Canvas x:Name="TrackLanesLayer" IsHitTestVisible="False"/>

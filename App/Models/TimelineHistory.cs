@@ -11,9 +11,12 @@ internal sealed class TimelineHistory
     public bool CanUndo => undoStack.Count > 0;
     public bool CanRedo => redoStack.Count > 0;
 
-    public void PushUndo(TimelineSequence sequence, Guid? selectedSegmentId)
+    public void PushUndo(TimelineSequence sequence, Guid? selectedSegmentId) =>
+        PushSnapshot(sequence.CaptureSnapshot(), selectedSegmentId);
+
+    public void PushSnapshot(TimelineStateSnapshot snapshot, Guid? selectedSegmentId)
     {
-        undoStack.Add(new TimelineHistoryEntry(sequence.CaptureSnapshot(), selectedSegmentId));
+        undoStack.Add(new TimelineHistoryEntry(snapshot, selectedSegmentId));
         if (undoStack.Count > MaxEntries)
             undoStack.RemoveAt(0);
         redoStack.Clear();

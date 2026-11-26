@@ -672,6 +672,8 @@ public partial class Editor : Window
                 sequence.UpdateSourceDuration(item.Path, info.DurationSeconds);
                 if (!hasUserZoomed)
                     FitTimelineToViewport(keepAutoFit: true);
+                if (!playing && activePlaybackSlice is null)
+                    SyncTimelinePlaybackToPlayhead();
                 RefreshTrimFields();
             }
             UpdateControls();
@@ -1101,7 +1103,7 @@ public partial class Editor : Window
 
         if (modifiers == ModifierKeys.None)
         {
-            if (e.Key == Key.Space && e.OriginalSource is not ButtonBase and not ListBoxItem)
+            if (e.Key == Key.Space)
             {
                 TogglePlayback();
                 e.Handled = true;

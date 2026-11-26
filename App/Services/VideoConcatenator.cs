@@ -306,92 +306,101 @@ internal static class VideoConcatenator
                 }
             }
 
-            // Pass 1: Video samples
+            var (resolvedVideoIdx, resolvedAudioIdx) = ResolveSelectedStreamIndices(reader, wantAudio: readAudio);
+            if (resolvedVideoIdx is not { } readerVideoIdx)
+                throw new IOException($"Nenhuma faixa de vídeo encontrada em '{Path.GetFileName(inputPath)}'.");
+            if (readAudio && !resolvedAudioIdx.HasValue)
+                readAudio = false;
+
+            const int maxConsecutiveEmptyReads = 256;
+            var consecutiveEmptyReads = 0;
+            var expectedDurationHns = Math.Max(defaultFrameDurationHns, (long)Math.Round(probe.DurationSeconds * 10_000_000.0));
             long? firstVideoTs = null;
+            long? firstAudioTs = null;
             var maxVideoEndLocal = 0L;
             var frameCount = 0;
+            var videoEof = false;
+            var audioEof = !readAudio || !resolvedAudioIdx.HasValue || audioStreamIndex is null;
 
-            while (true)
+            // Single-pass interleaved read keeps SinkWriter memory bounded and prevents EOF loss on pass 2.
+            while (!videoEof || !audioEof)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                CheckHr(
-                    reader.ReadSample(MfSourceReaderFirstVideoStream, 0, out _, out var flags, out var ts, out var sample),
-                    "ReadSample(video)");
+                var readTarget = videoEof
+                    ? resolvedAudioIdx!.Value
+                    : audioEof
+                        ? readerVideoIdx
+                        : MfSourceReaderAnyStream;
+
+                var hr = reader.ReadSample(readTarget, 0, out var actualIdx, out var flags, out var ts, out var sample);
+                if (hr < 0)
+                {
+                    ReleaseCom(sample);
+                    if (readAudio && resolvedAudioIdx.HasValue && readTarget == resolvedAudioIdx.Value)
+                    {
+                        audioEof = true;
+                        continue;
+                    }
+                    CheckHr(hr, "ReadSample");
+                }
 
                 if ((flags & MfSourceReaderFlagError) != 0)
                 {
                     ReleaseCom(sample);
+                    if (readAudio && resolvedAudioIdx.HasValue && actualIdx == resolvedAudioIdx.Value)
+                    {
+                        audioEof = true;
+                        continue;
+                    }
                     throw new IOException($"Erro ao ler vídeo de '{Path.GetFileName(inputPath)}'.");
                 }
 
+                var isAudioSample = readAudio && resolvedAudioIdx.HasValue && actualIdx == resolvedAudioIdx.Value;
                 if (sample is not null)
                 {
+                    consecutiveEmptyReads = 0;
                     try
                     {
-                        var sampleDuration = sample.GetSampleDuration(out var rawDur) == 0 && rawDur > 0
-                            ? rawDur
-                            : defaultFrameDurationHns;
-                        firstVideoTs ??= ts;
-                        var localPts = Math.Max(0L, ts - firstVideoTs.Value);
-                        var outPts = timelineOffsetHns + localPts;
-                        if (outPts <= lastWrittenVideoPts)
-                            outPts = lastWrittenVideoPts + Math.Max(1L, defaultFrameDurationHns / 2);
-
-                        var frame = MediaFoundationFrameCodec.ExtractBgraFromSample(
-                            sample, layout.BufH, layout.DefaultStride, layout.CropX, layout.CropY, layout.CropW, layout.CropH);
-                        var normalized = frame.Width == targetW && frame.Height == targetH
-                            ? frame
-                            : FitLetterbox(frame, targetW, targetH);
-
-                        WriteVideoFrame(writer, videoStreamIndex, normalized, outPts, sampleDuration);
-                        lastWrittenVideoPts = outPts;
-                        frameCount++;
-
-                        var localEnd = (outPts - timelineOffsetHns) + sampleDuration;
-                        if (localEnd > maxVideoEndLocal)
-                            maxVideoEndLocal = localEnd;
-
-                        if (onProgress is not null && totalExpectedHns > 0)
+                        if (actualIdx == readerVideoIdx)
                         {
-                            var pct = (int)Math.Clamp((timelineOffsetHns + localEnd) * 9900L / totalExpectedHns, 0, 9900);
-                            onProgress(pct);
+                            var sampleDuration = sample.GetSampleDuration(out var rawDur) == 0 && rawDur > 0
+                                ? rawDur
+                                : defaultFrameDurationHns;
+                            firstVideoTs ??= ts;
+                            var localPts = Math.Max(0L, ts - firstVideoTs.Value);
+                            var outPts = timelineOffsetHns + localPts;
+                            if (outPts <= lastWrittenVideoPts)
+                                outPts = lastWrittenVideoPts + Math.Max(1L, defaultFrameDurationHns / 2);
+
+                            var frame = MediaFoundationFrameCodec.ExtractBgraFromSample(
+                                sample, layout.BufH, layout.DefaultStride, layout.CropX, layout.CropY, layout.CropW, layout.CropH);
+                            var normalized = frame.Width == targetW && frame.Height == targetH
+                                ? frame
+                                : FitLetterbox(frame, targetW, targetH);
+
+                            WriteVideoFrame(writer, videoStreamIndex, normalized, outPts, sampleDuration);
+                            lastWrittenVideoPts = outPts;
+                            frameCount++;
+
+                            var localEnd = (outPts - timelineOffsetHns) + sampleDuration;
+                            if (localEnd > maxVideoEndLocal)
+                                maxVideoEndLocal = localEnd;
+
+                            if (onProgress is not null && totalExpectedHns > 0)
+                            {
+                                var pct = (int)Math.Clamp((timelineOffsetHns + localEnd) * 9900L / totalExpectedHns, 0, 9900);
+                                onProgress(pct);
+                            }
                         }
-                    }
-                    finally
-                    {
-                        ReleaseCom(sample);
-                    }
-                }
-
-                if ((flags & MfSourceReaderFlagEndOfStream) != 0)
-                    break;
-            }
-
-            var segmentDurationHns = maxVideoEndLocal > 0
-                ? maxVideoEndLocal
-                : Math.Max(defaultFrameDurationHns, (long)Math.Round(probe.DurationSeconds * 10_000_000.0));
-
-            // Pass 2: Audio samples (if present)
-            if (readAudio && audioStreamIndex is { } audioIdx)
-            {
-                long? firstAudioTs = null;
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var hr = reader.ReadSample(MfSourceReaderFirstAudioStream, 0, out _, out var flags, out var ts, out var sample);
-                    if (hr < 0)
-                    {
-                        ReleaseCom(sample);
-                        break;
-                    }
-
-                    if (sample is not null)
-                    {
-                        try
+                        else if (isAudioSample && audioStreamIndex is { } audioIdx)
                         {
                             firstAudioTs ??= ts;
                             var localPts = Math.Max(0L, ts - firstAudioTs.Value);
-                            if (localPts < segmentDurationHns)
+                            var audioCapHns = videoEof && maxVideoEndLocal > 0
+                                ? maxVideoEndLocal
+                                : Math.Max(maxVideoEndLocal, expectedDurationHns) + defaultFrameDurationHns;
+
+                            if (localPts < audioCapHns)
                             {
                                 var outPts = Math.Max(lastWrittenAudioEnd, timelineOffsetHns + localPts);
                                 var dur = sample.GetSampleDuration(out var rawDur) == 0 && rawDur > 0
@@ -403,17 +412,45 @@ internal static class VideoConcatenator
                                 CheckHr(writer.WriteSample(audioIdx, sample), "writer.WriteSample(audio)");
                                 lastWrittenAudioEnd = outPts + Math.Max(1L, dur);
                             }
-                        }
-                        finally
-                        {
-                            ReleaseCom(sample);
+                            else if (videoEof && maxVideoEndLocal > 0 && localPts >= maxVideoEndLocal + 5_000_000)
+                            {
+                                audioEof = true;
+                            }
                         }
                     }
-
-                    if ((flags & MfSourceReaderFlagEndOfStream) != 0)
+                    finally
+                    {
+                        ReleaseCom(sample);
+                    }
+                }
+                else if ((flags & MfSourceReaderFlagEndOfStream) == 0)
+                {
+                    consecutiveEmptyReads++;
+                    if (consecutiveEmptyReads >= maxConsecutiveEmptyReads)
                         break;
                 }
+
+                if ((flags & MfSourceReaderFlagEndOfStream) != 0)
+                {
+                    if (actualIdx == readerVideoIdx)
+                        videoEof = true;
+                    else if (readAudio && resolvedAudioIdx.HasValue && actualIdx == resolvedAudioIdx.Value)
+                        audioEof = true;
+                    else if (actualIdx == MfSourceReaderAllStreams)
+                    {
+                        videoEof = true;
+                        audioEof = true;
+                    }
+                    else if (!videoEof)
+                        videoEof = true;
+                    else
+                        audioEof = true;
+                }
             }
+
+            var segmentDurationHns = maxVideoEndLocal > 0
+                ? maxVideoEndLocal
+                : expectedDurationHns;
 
             return frameCount > 0 ? segmentDurationHns : Math.Max(defaultFrameDurationHns, segmentDurationHns);
         }
@@ -425,6 +462,42 @@ internal static class VideoConcatenator
             ReleaseCom(reader);
             ReleaseCom(readerAttrs);
         }
+    }
+
+    private static (uint? VideoIdx, uint? AudioIdx) ResolveSelectedStreamIndices(IMFSourceReader reader, bool wantAudio)
+    {
+        uint? videoIdx = null;
+        uint? audioIdx = null;
+
+        for (uint idx = 0; idx < 32; idx++)
+        {
+            if (reader.GetStreamSelection(idx, out var selected) < 0)
+                break;
+            if (!selected)
+                continue;
+
+            IMFMediaType? mt = null;
+            try
+            {
+                if (reader.GetCurrentMediaType(idx, out mt) >= 0 && mt is not null
+                    && mt.GetGUID(in MfMtMajorType, out var major) >= 0)
+                {
+                    if (major == MfMediaTypeVideo && videoIdx is null)
+                        videoIdx = idx;
+                    else if (wantAudio && major == MfMediaTypeAudio && audioIdx is null)
+                        audioIdx = idx;
+                }
+            }
+            finally
+            {
+                ReleaseCom(mt);
+            }
+
+            if (videoIdx.HasValue && (!wantAudio || audioIdx.HasValue))
+                break;
+        }
+
+        return (videoIdx, audioIdx);
     }
 
     private static void WriteVideoFrame(

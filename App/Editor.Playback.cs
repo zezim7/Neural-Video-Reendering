@@ -8,11 +8,13 @@ public partial class Editor
 {
     private CompositionSlice? activePlaybackSlice;
     private DateTime suppressEndCheckUntilUtc;
+    private double? expectedSeekSourcePos;
 
     private void UnloadMedia()
     {
         clock.Stop();
         activePlaybackSlice = null;
+        expectedSeekSourcePos = null;
         loadedMediaPath = null;
         loadingMediaPath = null;
         pendingAutoPlay = false;
@@ -20,6 +22,7 @@ public partial class Editor
         ready = playing = false;
         Player.Close();
         Player.Source = null;
+        Player.Visibility = Visibility.Visible;
         VideoTag.Visibility = Visibility.Collapsed;
         VideoPlaceholder.Visibility = Visibility.Visible;
         VideoMessage.Text = "Arraste vídeos ou imagens";
@@ -33,11 +36,14 @@ public partial class Editor
 
     private void LoadMediaForPath(string path, double seekToSeconds, bool autoPlay)
     {
+        Player.Visibility = Visibility.Visible;
+
         if (ready && loadedMediaPath is not null
             && loadedMediaPath.Equals(path, StringComparison.OrdinalIgnoreCase))
         {
             var safeSeek = Math.Max(0, seekToSeconds);
-            suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(180);
+            expectedSeekSourcePos = safeSeek;
+            suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(600);
             Player.Position = TimeSpan.FromSeconds(safeSeek);
             if (autoPlay && !playing)
                 StartPlayerClock();
@@ -110,10 +116,17 @@ public partial class Editor
             seek = Math.Clamp(seek, 0, naturalDuration);
         if (seek > 0)
         {
-            suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(180);
+            expectedSeekSourcePos = seek;
+            suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(600);
             Player.Position = TimeSpan.FromSeconds(seek);
         }
+        else
+        {
+            expectedSeekSourcePos = 0;
+            suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(200);
+        }
 
+        Player.Visibility = Visibility.Visible;
         VideoPlaceholder.Visibility = Visibility.Collapsed;
         VideoTag.Visibility = Visibility.Visible;
 
@@ -262,7 +275,9 @@ public partial class Editor
                 else
                 {
                     activePlaybackSlice = null;
+                    expectedSeekSourcePos = null;
                     Pause();
+                    Player.Visibility = Visibility.Hidden;
                     DrawPosition();
                     UpdateVideoTag();
                     return;
@@ -271,7 +286,9 @@ public partial class Editor
             else
             {
                 activePlaybackSlice = null;
+                expectedSeekSourcePos = null;
                 if (ready) Player.Pause();
+                Player.Visibility = Visibility.Hidden;
                 VideoTag.Visibility = Visibility.Visible;
                 VideoTagText.Text = "Espaço vazio";
                 UpdateHeaderClipInfo();
@@ -285,6 +302,9 @@ public partial class Editor
         var seg = activeSlice.Segment;
         var sourceOffset = Math.Clamp(timelinePosition - activeSlice.TimelineStart, 0, activeSlice.Duration);
         var sourcePos = activeSlice.SourceStart + sourceOffset;
+        expectedSeekSourcePos = sourcePos;
+        suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(600);
+        Player.Visibility = Visibility.Visible;
 
         LoadMediaForPath(seg.SourcePath, sourcePos, autoPlay);
         UpdateHeaderClipInfo();
@@ -303,13 +323,20 @@ public partial class Editor
             return;
         }
 
-        if (DateTime.UtcNow < suppressEndCheckUntilUtc)
+        var playerSourceTime = Player.Position.TotalSeconds;
+        if (expectedSeekSourcePos is { } expectedSeek)
         {
-            DrawPosition();
-            return;
+            if (Math.Abs(playerSourceTime - expectedSeek) <= 0.5 || DateTime.UtcNow >= suppressEndCheckUntilUtc)
+            {
+                expectedSeekSourcePos = null;
+            }
+            else
+            {
+                DrawPosition();
+                return;
+            }
         }
 
-        var playerSourceTime = Player.Position.TotalSeconds;
         var localOffset = Math.Max(0, playerSourceTime - current.SourceStart);
         timelinePosition = Math.Min(current.TimelineEnd, current.TimelineStart + localOffset);
 
