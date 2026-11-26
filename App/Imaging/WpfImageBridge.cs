@@ -1,6 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using VideoNR.Services;
@@ -20,6 +21,8 @@ internal static class WpfImageBridge
     private const uint Srccopy = 0x00CC0020;
     private const uint Captureblt = 0x40000000;
     private const uint MonitorDefaultToNearest = 2;
+    private static readonly IntPtr HwndTopmost = new(-1);
+    private const uint SwpShowWindow = 0x0040;
 
     internal static BitmapSource ToBitmapSource(RawImage image)
     {
@@ -146,6 +149,20 @@ internal static class WpfImageBridge
         }
     }
 
+    internal static void PositionOverlayToVirtualScreen(Window window, ScreenSnapshot snapshot)
+    {
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        _ = SetWindowPos(
+            hwnd,
+            HwndTopmost,
+            snapshot.LeftPx,
+            snapshot.TopPx,
+            snapshot.Image.Width,
+            snapshot.Image.Height,
+            SwpShowWindow);
+    }
+
     internal static (int X, int Y, int Width, int Height) GetActiveMonitorBounds(ScreenSnapshot snapshot)
     {
         if (!GetCursorPos(out var pt))
@@ -215,6 +232,17 @@ internal static class WpfImageBridge
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint uFlags);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetDC(IntPtr hWnd);

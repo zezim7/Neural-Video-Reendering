@@ -473,7 +473,7 @@ public partial class Editor
         {
             source = WpfImageBridge.LoadFromFile(path);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or NotSupportedException or FormatException or COMException)
         {
             Status.Text = $"Não foi possível abrir a imagem: {error.Message}";
             return;
