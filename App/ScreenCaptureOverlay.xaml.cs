@@ -27,8 +27,10 @@ public partial class ScreenCaptureOverlay : Window
         Height = SystemParameters.VirtualScreenHeight;
 
         ScreenshotImage.Source = WpfImageBridge.ToBitmapSource(snapshot.Image);
+        SourceInitialized += (_, _) => WpfImageBridge.PositionOverlayToVirtualScreen(this, snapshot);
         Loaded += (_, _) =>
         {
+            WpfImageBridge.PositionOverlayToVirtualScreen(this, snapshot);
             UpdateScrimAndSelection();
             PositionToolbar();
             Activate();

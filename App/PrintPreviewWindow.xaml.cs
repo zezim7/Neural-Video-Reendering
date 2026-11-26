@@ -101,6 +101,12 @@ public partial class PrintPreviewWindow : Window
 
     private void StageSizeChanged(object sender, SizeChangedEventArgs e) => UpdateStageLayout();
 
+    private void StageScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (IsCompareMode && DividerOverlay.Visibility == Visibility.Visible)
+            UpdateSplitKnobVerticalPosition(ViewportGrid.Height);
+    }
+
     private void StagePreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
@@ -318,7 +324,7 @@ public partial class PrintPreviewWindow : Window
             Canvas.SetTop(SplitLine, 0);
 
             Canvas.SetLeft(SplitKnob, splitX - SplitKnob.Width / 2.0);
-            Canvas.SetTop(SplitKnob, (viewH - SplitKnob.Height) / 2.0);
+            UpdateSplitKnobVerticalPosition(viewH);
 
             OriginalPill.Visibility = splitRatio > 0.08 ? Visibility.Visible : Visibility.Collapsed;
             NrPill.Visibility = splitRatio < 0.92 ? Visibility.Visible : Visibility.Collapsed;
@@ -340,6 +346,25 @@ public partial class PrintPreviewWindow : Window
         }
 
         UpdateStageCursor();
+    }
+
+    private void UpdateSplitKnobVerticalPosition(double viewH)
+    {
+        if (viewH <= 0 || double.IsNaN(viewH)) return;
+        var halfKnob = SplitKnob.Height / 2.0;
+        var visibleH = StageScroll.ViewportHeight;
+        double centerY;
+        if (IsActualZoom && visibleH > 0 && viewH > visibleH + 0.5)
+        {
+            centerY = StageScroll.VerticalOffset + visibleH / 2.0;
+            var margin = Math.Min(halfKnob + 8, viewH / 2.0);
+            centerY = Math.Clamp(centerY, margin, viewH - margin);
+        }
+        else
+        {
+            centerY = viewH / 2.0;
+        }
+        Canvas.SetTop(SplitKnob, centerY - halfKnob);
     }
 
     private void CopyClick(object sender, RoutedEventArgs e)
@@ -381,7 +406,7 @@ public partial class PrintPreviewWindow : Window
             SavedFolder = Path.GetDirectoryName(dialog.FileName);
             PreviewStatus.Text = $"Salvo em {dialog.FileName}";
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or NotSupportedException or COMException)
         {
             PreviewStatus.Text = $"Falha ao salvar: {error.Message}";
         }

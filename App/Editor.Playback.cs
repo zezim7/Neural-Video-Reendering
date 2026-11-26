@@ -147,6 +147,16 @@ public partial class Editor
 
     private void ResizeTrim(object sender, SizeChangedEventArgs e) => DrawTrim();
 
+    private void TransportBarSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var compact = e.NewSize.Width < 680;
+        Grid.SetRow(TrimControlsPanel, compact ? 1 : 0);
+        Grid.SetColumn(TrimControlsPanel, compact ? 0 : 1);
+        Grid.SetColumnSpan(TrimControlsPanel, compact ? 2 : 1);
+        TrimControlsPanel.HorizontalAlignment = compact ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        TrimControlsPanel.Margin = compact ? new Thickness(0, 7, 0, 0) : new Thickness(10, 0, 0, 0);
+    }
+
     private void DrawTrim()
     {
         if (clip is not { Duration: > 0 } current)

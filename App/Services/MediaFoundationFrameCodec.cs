@@ -193,7 +193,11 @@ internal static class MediaFoundationFrameCodec
                 CheckHr(reader.SetCurrentPosition(in Guid.Empty, in pos), "SetCurrentPosition");
             }
 
-            while (true)
+            const int maxConsecutiveEmptyReads = 128;
+            const int maxTotalReads = 4096;
+            var emptyReads = 0;
+
+            for (var totalReads = 0; totalReads < maxTotalReads; totalReads++)
             {
                 CheckHr(
                     reader.ReadSample(MfSourceReaderFirstVideoStream, 0, out _, out var flags, out var timestamp, out var sample),
@@ -207,6 +211,7 @@ internal static class MediaFoundationFrameCodec
 
                 if (sample is not null)
                 {
+                    emptyReads = 0;
                     if (targetHns <= 0 || timestamp >= targetHns - 150_000)
                     {
                         ReleaseCom(selectedSample);
@@ -222,8 +227,8 @@ internal static class MediaFoundationFrameCodec
                 if ((flags & MfSourceReaderFlagEndOfStream) != 0)
                     break;
 
-                if ((flags & MfSourceReaderFlagStreamTick) != 0)
-                    continue;
+                if (++emptyReads >= maxConsecutiveEmptyReads)
+                    break;
             }
 
             if (selectedSample is null)

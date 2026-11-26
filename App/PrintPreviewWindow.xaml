@@ -78,41 +78,44 @@
         <!-- Comparison Viewport -->
         <Border Grid.Row="1" Background="{StaticResource ViewportBg}" Margin="10" CornerRadius="4"
                 BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" ClipToBounds="True">
-            <ScrollViewer x:Name="StageScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
-                          Background="Transparent" SizeChanged="StageSizeChanged" PreviewMouseWheel="StagePreviewMouseWheel">
-                <Grid x:Name="StageHost" Background="Transparent"
-                      MouseDown="StageMouseDown" MouseMove="StageMouseMove"
-                      MouseUp="StageMouseUp" LostMouseCapture="StageLostCapture">
-                    <Grid x:Name="ViewportGrid" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
-                        <Image x:Name="EnhancedImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"/>
-                        <Image x:Name="OriginalImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality">
-                            <Image.Clip>
-                                <RectangleGeometry x:Name="OriginalClip"/>
-                            </Image.Clip>
-                        </Image>
+            <Grid>
+                <ScrollViewer x:Name="StageScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
+                              Background="Transparent" SizeChanged="StageSizeChanged" ScrollChanged="StageScrollChanged"
+                              PreviewMouseWheel="StagePreviewMouseWheel">
+                    <Grid x:Name="StageHost" Background="Transparent"
+                          MouseDown="StageMouseDown" MouseMove="StageMouseMove"
+                          MouseUp="StageMouseUp" LostMouseCapture="StageLostCapture">
+                        <Grid x:Name="ViewportGrid" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
+                            <Image x:Name="EnhancedImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <Image x:Name="OriginalImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality">
+                                <Image.Clip>
+                                    <RectangleGeometry x:Name="OriginalClip"/>
+                                </Image.Clip>
+                            </Image>
 
-                        <Canvas x:Name="DividerOverlay" IsHitTestVisible="False">
-                            <Border x:Name="SplitLine" Width="1.5" Background="{StaticResource Accent}"/>
-                            <Border x:Name="SplitKnob" Width="26" Height="26" CornerRadius="13"
-                                    Background="{StaticResource Accent}" BorderBrush="#121212" BorderThickness="1.5">
-                                <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8AB;" FontSize="11" Foreground="#121212"/>
-                            </Border>
-                        </Canvas>
-
-                        <Border x:Name="OriginalPill" Background="{StaticResource OverlayBg}" BorderBrush="{StaticResource BorderControl}" BorderThickness="1"
-                                CornerRadius="3" Padding="8,3" Margin="10" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                IsHitTestVisible="False">
-                            <TextBlock Text="Original" FontSize="11" FontWeight="SemiBold"/>
-                        </Border>
-
-                        <Border x:Name="NrPill" Background="{StaticResource AccentSubtle}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
-                                CornerRadius="3" Padding="8,3" Margin="10" HorizontalAlignment="Right" VerticalAlignment="Top"
-                                IsHitTestVisible="False">
-                            <TextBlock Text="DLSS 5 / NR" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentHover}"/>
-                        </Border>
+                            <Canvas x:Name="DividerOverlay" IsHitTestVisible="False">
+                                <Border x:Name="SplitLine" Width="1.5" Background="{StaticResource Accent}"/>
+                                <Border x:Name="SplitKnob" Width="26" Height="26" CornerRadius="13"
+                                        Background="{StaticResource Accent}" BorderBrush="#121212" BorderThickness="1.5">
+                                    <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8AB;" FontSize="11" Foreground="#121212"/>
+                                </Border>
+                            </Canvas>
+                        </Grid>
                     </Grid>
-                </Grid>
-            </ScrollViewer>
+                </ScrollViewer>
+
+                <Border x:Name="OriginalPill" Background="{StaticResource OverlayBg}" BorderBrush="{StaticResource BorderControl}" BorderThickness="1"
+                        CornerRadius="3" Padding="8,3" Margin="12" HorizontalAlignment="Left" VerticalAlignment="Top"
+                        IsHitTestVisible="False">
+                    <TextBlock Text="Original" FontSize="11" FontWeight="SemiBold"/>
+                </Border>
+
+                <Border x:Name="NrPill" Background="{StaticResource AccentSubtle}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                        CornerRadius="3" Padding="8,3" Margin="12" HorizontalAlignment="Right" VerticalAlignment="Top"
+                        IsHitTestVisible="False">
+                    <TextBlock Text="DLSS 5 / NR" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentHover}"/>
+                </Border>
+            </Grid>
         </Border>
 
         <!-- Bottom Action Bar -->
