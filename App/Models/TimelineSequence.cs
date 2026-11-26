@@ -288,8 +288,23 @@ internal sealed class TimelineSequence
         var slices = ResolveComposition();
         for (var i = 0; i < slices.Count; i++)
         {
-            if (slices[i].TimelineStart >= timelineSeconds - 1e-4 && slices[i].TimelineEnd > timelineSeconds + 1e-4)
+            if (slices[i].TimelineEnd > timelineSeconds + 1e-4)
                 return slices[i];
+        }
+        return null;
+    }
+
+    public CompositionSlice? FindNextCompositionSlice(CompositionSlice current)
+    {
+        var slices = ResolveComposition();
+        for (var i = 0; i < slices.Count; i++)
+        {
+            var candidate = slices[i];
+            if (candidate.TimelineStart >= current.TimelineEnd - 1e-4
+                && candidate.TimelineEnd > current.TimelineEnd + 1e-4)
+            {
+                return candidate;
+            }
         }
         return null;
     }

@@ -445,6 +445,33 @@ try
     AssertTrue(hist.TryRedo(seq, undoSel, out _), "TimelineHistory TryRedo succeeds");
     AssertEqual(4, seq.Count, "TimelineHistory Redo restores 4 segments");
 
+    // --- Regression: overlapping V2 ends before V1 finishes (transition must advance to V1 remainder) ---
+    var overlapSeq = new TimelineSequence();
+    var ovV2 = overlapSeq.AddClipAt("/videos/top.mp4", 17.049, timelineStart: 0.0, trackIndex: 1, colorIndex: 0);
+    var ovV1 = overlapSeq.AddClipAt("/videos/bottom.mp4", 73.0, timelineStart: 8.365, trackIndex: 0, colorIndex: 1);
+    var ovSlices = overlapSeq.ResolveComposition();
+    AssertEqual(2, ovSlices.Count, "Overlapping V2+V1 resolves into 2 playback slices");
+    AssertEqual(ovV2.Id, ovSlices[0].Segment.Id, "Slice 0 is V2");
+    AssertNear(17.049, ovSlices[0].TimelineEnd, "Slice 0 ends at 17.049");
+    AssertEqual(ovV1.Id, ovSlices[1].Segment.Id, "Slice 1 is V1 continuation");
+    AssertNear(17.049, ovSlices[1].TimelineStart, "Slice 1 starts at 17.049");
+    AssertNear(8.684, ovSlices[1].SourceStart, "Slice 1 resumes V1 at 8.684s", eps: 1e-4);
+
+    var nextFromSlice = overlapSeq.FindNextCompositionSlice(ovSlices[0]);
+    AssertTrue(nextFromSlice.HasValue, "FindNextCompositionSlice advances from V2 to V1 remainder");
+    AssertEqual(ovV1.Id, nextFromSlice!.Value.Segment.Id, "Next slice is V1 remainder");
+    AssertNear(17.049, nextFromSlice.Value.TimelineStart, "Next slice starts at 17.049");
+
+    var nextWithClockOvershoot = overlapSeq.FindNextCompositionSliceAfter(17.049 + 0.002);
+    AssertTrue(nextWithClockOvershoot.HasValue, "FindNextCompositionSliceAfter handles +0.002 clock overshoot");
+    AssertEqual(ovV1.Id, nextWithClockOvershoot!.Value.Segment.Id, "Clock overshoot returns V1 remainder");
+
+    var nextWithEofOvershoot = overlapSeq.FindNextCompositionSliceAfter(17.049 + 0.03);
+    AssertTrue(nextWithEofOvershoot.HasValue, "FindNextCompositionSliceAfter handles +0.03 EOF overshoot");
+    AssertEqual(ovV1.Id, nextWithEofOvershoot!.Value.Segment.Id, "EOF overshoot returns V1 remainder");
+
+    AssertTrue(overlapSeq.FindNextCompositionSlice(ovSlices[1]) is null, "FindNextCompositionSlice returns null at true timeline end");
+
     // --- SettingsStore ---
     var settingsFile = Path.Combine(tempDir, "prefs", "settings.json");
     var toSave = new UserSettings(

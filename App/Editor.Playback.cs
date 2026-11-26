@@ -6,9 +6,13 @@ namespace VideoNR;
 
 public partial class Editor
 {
+    private CompositionSlice? activePlaybackSlice;
+    private DateTime suppressEndCheckUntilUtc;
+
     private void UnloadMedia()
     {
         clock.Stop();
+        activePlaybackSlice = null;
         loadedMediaPath = null;
         loadingMediaPath = null;
         pendingAutoPlay = false;
@@ -33,6 +37,7 @@ public partial class Editor
             && loadedMediaPath.Equals(path, StringComparison.OrdinalIgnoreCase))
         {
             var safeSeek = Math.Max(0, seekToSeconds);
+            suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(180);
             Player.Position = TimeSpan.FromSeconds(safeSeek);
             if (autoPlay && !playing)
                 StartPlayerClock();
@@ -104,7 +109,10 @@ public partial class Editor
         if (naturalDuration > 0)
             seek = Math.Clamp(seek, 0, naturalDuration);
         if (seek > 0)
+        {
+            suppressEndCheckUntilUtc = DateTime.UtcNow.AddMilliseconds(180);
             Player.Position = TimeSpan.FromSeconds(seek);
+        }
 
         VideoPlaceholder.Visibility = Visibility.Collapsed;
         VideoTag.Visibility = Visibility.Visible;
@@ -138,7 +146,10 @@ public partial class Editor
     private void MediaFinished(object sender, RoutedEventArgs e)
     {
         if (!playing) return;
-        AdvanceToNextSliceOrStop(timelinePosition + 0.03);
+        if (activePlaybackSlice is { } cur)
+            AdvanceFromSlice(cur);
+        else
+            AdvanceToNextSliceOrStop(timelinePosition + 0.002);
     }
 
     private void PlayClick(object sender, RoutedEventArgs e) => TogglePlayback();
@@ -210,6 +221,7 @@ public partial class Editor
     private void Pause()
     {
         clock.Stop();
+        activePlaybackSlice = null;
         pendingAutoPlay = false;
         if (ready) Player.Pause();
         playing = false;
@@ -228,6 +240,7 @@ public partial class Editor
         var total = sequence.TotalDuration;
         if (total <= 0)
         {
+            activePlaybackSlice = null;
             timelinePosition = 0;
             DrawPosition();
             return;
@@ -248,6 +261,7 @@ public partial class Editor
                 }
                 else
                 {
+                    activePlaybackSlice = null;
                     Pause();
                     DrawPosition();
                     UpdateVideoTag();
@@ -256,6 +270,7 @@ public partial class Editor
             }
             else
             {
+                activePlaybackSlice = null;
                 if (ready) Player.Pause();
                 VideoTag.Visibility = Visibility.Visible;
                 VideoTagText.Text = "Espaço vazio";
@@ -266,6 +281,7 @@ public partial class Editor
         }
 
         var activeSlice = slice.Value;
+        activePlaybackSlice = activeSlice;
         var seg = activeSlice.Segment;
         var sourceOffset = Math.Clamp(timelinePosition - activeSlice.TimelineStart, 0, activeSlice.Duration);
         var sourcePos = activeSlice.SourceStart + sourceOffset;
@@ -280,10 +296,16 @@ public partial class Editor
     {
         if (!ready || !playing || sequence.IsEmpty) return;
 
-        var slice = sequence.LocateCompositionAt(timelinePosition);
+        var slice = activePlaybackSlice ?? sequence.LocateCompositionAt(timelinePosition);
         if (slice is not { } current)
         {
             AdvanceToNextSliceOrStop(timelinePosition);
+            return;
+        }
+
+        if (DateTime.UtcNow < suppressEndCheckUntilUtc)
+        {
+            DrawPosition();
             return;
         }
 
@@ -295,11 +317,26 @@ public partial class Editor
 
         if (playerSourceTime >= current.SourceEnd - 0.025)
         {
-            AdvanceToNextSliceOrStop(current.TimelineEnd + 0.002);
+            AdvanceFromSlice(current);
             return;
         }
 
         DrawPosition();
+    }
+
+    private void AdvanceFromSlice(CompositionSlice current)
+    {
+        var next = sequence.FindNextCompositionSlice(current);
+        if (next is not { } nextSlice)
+        {
+            Pause();
+            var slices = sequence.ResolveComposition();
+            timelinePosition = slices.Count > 0 ? slices[^1].TimelineEnd : sequence.TotalDuration;
+            DrawPosition();
+            return;
+        }
+
+        SeekTimeline(nextSlice.TimelineStart, autoPlay: true);
     }
 
     private void AdvanceToNextSliceOrStop(double afterTimelineSeconds)
