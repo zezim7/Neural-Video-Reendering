@@ -51,7 +51,6 @@ public partial class Editor
     private int dragInitialTrackIndex;
     private bool dragUndoPushed;
     private bool dragMutated;
-    private bool razorToolActive;
     private bool hasUserZoomed;
     private bool syncingZoomSlider;
     private double pixelsPerSecond = 24.0;
@@ -76,27 +75,6 @@ public partial class Editor
     {
         var row = (int)Math.Floor(Math.Max(0, y) / TrackHeight);
         return Math.Clamp(sequence.TrackCount - 1 - row, 0, sequence.TrackCount - 1);
-    }
-
-    private void TimelineToolChanged(object sender, RoutedEventArgs e)
-    {
-        if (!IsInitialized) return;
-        razorToolActive = RazorToolRadio.IsChecked == true;
-        if (!razorToolActive)
-            RazorCursorLine.Visibility = Visibility.Collapsed;
-        TimelineTrack.Cursor = razorToolActive ? Cursors.Cross : Cursors.Arrow;
-    }
-
-    private void SetRazorTool(bool razor)
-    {
-        razorToolActive = razor;
-        if (razor) RazorToolRadio.IsChecked = true;
-        else SelectToolRadio.IsChecked = true;
-        if (!razor) RazorCursorLine.Visibility = Visibility.Collapsed;
-        TimelineTrack.Cursor = razor ? Cursors.Cross : Cursors.Arrow;
-        Status.Text = razor
-            ? "Ferramenta Tesoura ativa: clique em qualquer clipe para cortar exatamente no ponto."
-            : "Ferramenta Mover/Aparar ativa: arraste as bordas para cortar ou mova entre faixas.";
     }
 
     private void AppendClipToTimeline(ClipItem item, int? targetTrackIndex = null, double? atTimelineSeconds = null)
@@ -1004,7 +982,7 @@ public partial class Editor
     {
         if (trackDragMode != TrackDragMode.Pan || e.ChangedButton != MouseButton.Middle) return;
         trackDragMode = TrackDragMode.None;
-        TimelineTrack.Cursor = razorToolActive ? Cursors.Cross : Cursors.Arrow;
+        TimelineTrack.Cursor = Cursors.Arrow;
         if (TimelineTrack.IsMouseCaptured)
             TimelineTrack.ReleaseMouseCapture();
         e.Handled = true;
@@ -1027,7 +1005,7 @@ public partial class Editor
             if (pt.X < x1 - EdgeHitPixels * 0.5 || pt.X > x2 + EdgeHitPixels * 0.5)
                 continue;
 
-            if (!locked && !razorToolActive && !busy)
+            if (!locked && !busy)
             {
                 var innerEdge = width >= 22 ? 9.0 : Math.Min(4.0, width * 0.25);
                 if (Math.Abs(pt.X - x1) <= innerEdge || (pt.X < x1 && x1 - pt.X <= 6))
@@ -1050,50 +1028,6 @@ public partial class Editor
         var pt = e.GetPosition(TimelineTrack);
         var trackIndex = YToTrackIndex(pt.Y);
         activeTrackIndex = trackIndex;
-
-        // Razor mode: direct single-click cut on any unlocked clip!
-        if (razorToolActive && !busy)
-        {
-            var (hitSeg, _) = HitTestTrackPoint(pt);
-            if (hitSeg is null)
-            {
-                var rawT = XToTime(pt.X);
-                SeekTimeline(rawT, autoPlay: false);
-                return;
-            }
-
-            if (sequence.IsTrackLocked(hitSeg.TrackIndex))
-            {
-                Status.Text = $"Faixa V{hitSeg.TrackIndex + 1} está bloqueada.";
-                return;
-            }
-
-            var rawCut = XToTime(pt.X);
-            var cutTime = snapEnabled
-                ? sequence.SnapTime(rawCut, SnapThresholdSeconds(), timelinePosition, hitSeg.Id)
-                : rawCut;
-
-            Pause();
-            var before = sequence.CaptureSnapshot();
-            var beforeSelected = selectedSegmentId;
-            var split = sequence.SplitSegmentAt(hitSeg.Id, cutTime);
-            if (split is { } pair)
-            {
-                history.PushSnapshot(before, beforeSelected);
-                selectedSegmentId = pair.Right.Id;
-                timelinePosition = cutTime;
-                SyncInspectorToCurrentScope();
-                RefreshTrimFields();
-                UpdateControls();
-                Status.Text = $"Clipe dividido com Tesoura em {TrimSelection.Format(cutTime, true)}.";
-            }
-            else
-            {
-                Status.Text = "Clique mais para o centro do clipe para cortar.";
-            }
-            e.Handled = true;
-            return;
-        }
 
         Pause();
         trackDragOrigin = pt;
@@ -1289,12 +1223,6 @@ public partial class Editor
         dragMutated = false;
     }
 
-    private void TrackMouseLeave(object sender, MouseEventArgs e)
-    {
-        if (trackDragMode == TrackDragMode.None)
-            RazorCursorLine.Visibility = Visibility.Collapsed;
-    }
-
     private void ClearDragVisuals()
     {
         SnapGuideLine.Visibility = Visibility.Collapsed;
@@ -1304,19 +1232,6 @@ public partial class Editor
 
     private void UpdateTrackHoverFeedback(Point pt)
     {
-        if (razorToolActive)
-        {
-            TimelineTrack.Cursor = Cursors.Cross;
-            var rawT = XToTime(pt.X);
-            var snapped = snapEnabled ? sequence.SnapTime(rawT, SnapThresholdSeconds(), timelinePosition) : rawT;
-            RazorCursorLine.Visibility = Visibility.Visible;
-            RazorCursorLine.Height = TimelineTrack.Height;
-            Canvas.SetLeft(RazorCursorLine, TimeToX(snapped) - 0.75);
-            Canvas.SetTop(RazorCursorLine, 0);
-            return;
-        }
-
-        RazorCursorLine.Visibility = Visibility.Collapsed;
         var (seg, hitKind) = HitTestTrackPoint(pt);
         if (seg is null || busy || sequence.IsTrackLocked(seg.TrackIndex))
         {

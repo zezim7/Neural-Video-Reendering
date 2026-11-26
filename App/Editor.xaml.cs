@@ -359,7 +359,7 @@ public partial class Editor : Window
         TopOpenButton.IsEnabled = AddButton.IsEnabled = EmptyOpenButton.IsEnabled = EngineButton.IsEnabled
             = NrVersion.IsEnabled = H264Radio.IsEnabled = HevcRadio.IsEnabled
             = SequenceExportRadio.IsEnabled = BatchExportRadio.IsEnabled
-            = GlobalScopeRadio.IsEnabled = SelectToolRadio.IsEnabled = RazorToolRadio.IsEnabled = !busy;
+            = GlobalScopeRadio.IsEnabled = !busy;
 
         var seg = SelectedSegment;
         var segLocked = seg is not null && sequence.IsTrackLocked(seg.TrackIndex);
@@ -1041,18 +1041,6 @@ public partial class Editor : Window
             e.Handled = true;
             return;
         }
-        if (modifiers == ModifierKeys.None && e.Key == Key.V && !busy)
-        {
-            SetRazorTool(false);
-            e.Handled = true;
-            return;
-        }
-        if (modifiers == ModifierKeys.None && e.Key == Key.C && !busy)
-        {
-            SetRazorTool(true);
-            e.Handled = true;
-            return;
-        }
         if (modifiers == ModifierKeys.None && e.Key == Key.F && !sequence.IsEmpty)
         {
             FitTimelineToViewport(keepAutoFit: false);
@@ -1071,7 +1059,7 @@ public partial class Editor : Window
             e.Handled = true;
             return;
         }
-        if (modifiers == ModifierKeys.None && e.Key == Key.S && !busy && CanSplitAt(timelinePosition))
+        if (modifiers == ModifierKeys.None && e.Key is Key.S or Key.C && !busy && CanSplitAt(timelinePosition))
         {
             SplitSegmentClick(sender, e);
             e.Handled = true;

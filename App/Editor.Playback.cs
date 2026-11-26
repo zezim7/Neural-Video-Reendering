@@ -26,7 +26,7 @@ public partial class Editor
         VideoTag.Visibility = Visibility.Collapsed;
         VideoPlaceholder.Visibility = Visibility.Visible;
         VideoMessage.Text = "Arraste vídeos ou imagens";
-        VideoSubMessage.Text = "Monte camadas V1, V2… · V Mover/Aparar · C Tesoura · F Ajustar";
+        VideoSubMessage.Text = "Monte camadas V1, V2… · C ou S Cortar na agulha · F Ajustar";
         EmptyOpenButton.Visibility = Visibility.Visible;
         EmptyPrintButton.Visibility = Visibility.Visible;
         PlayLabel.Text = "Reproduzir";

@@ -319,31 +319,11 @@
 
                                 <Border Width="1" Height="15" Background="{StaticResource BorderSubtle}" Margin="1,0,3,1" VerticalAlignment="Center"/>
 
-                                <!-- NLE Tool Switch: Select/Trim vs Razor -->
-                                <Border Background="{StaticResource RecessedBg}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="4" Padding="1" Margin="0,0,3,1">
-                                    <StackPanel Orientation="Horizontal">
-                                        <RadioButton x:Name="SelectToolRadio" GroupName="TimelineToolGroup" IsChecked="True" Style="{StaticResource SegmentedOption}" Padding="5,2"
-                                                     Checked="TimelineToolChanged" ToolTip="Selecionar, mover entre faixas e aparar bordas (V)">
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8B0;" FontSize="10" Margin="0,0,3,0"/>
-                                                <TextBlock Text="Mover" FontSize="10.5" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </RadioButton>
-                                        <RadioButton x:Name="RazorToolRadio" GroupName="TimelineToolGroup" Style="{StaticResource SegmentedOption}" Padding="5,2"
-                                                     Checked="TimelineToolChanged" ToolTip="Tesoura: clique em qualquer clipe para cortar exatamente onde clicar (C)">
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8C6;" FontSize="10" Foreground="{StaticResource Accent}" Margin="0,0,3,0"/>
-                                                <TextBlock Text="Tesoura" FontSize="10.5" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </RadioButton>
-                                    </StackPanel>
-                                </Border>
-
                                 <!-- Quick Segment Actions -->
-                                <Button x:Name="SplitButton" Click="SplitSegmentClick" Padding="5,3" Margin="0,0,2,1" ToolTip="Dividir clipe(s) na posição da agulha (S)">
+                                <Button x:Name="SplitButton" Click="SplitSegmentClick" Padding="5,3" Margin="0,0,2,1" ToolTip="Cortar/dividir clipe na posição da agulha (C ou S)">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8C6;" FontSize="10" Foreground="{StaticResource Accent}" Margin="0,0,3,0"/>
-                                        <TextBlock Text="Dividir" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Tesoura" FontSize="11" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="DuplicateSegmentButton" Style="{StaticResource IconButton}" Click="DuplicateSegmentClick" Padding="4,3" Margin="0,0,1,1" ToolTip="Duplicar clipe selecionado (Ctrl+D)">
@@ -420,7 +400,7 @@
 
                                 <!-- Bottom-Right: Multi-Track Lanes + Clips + Playhead -->
                                 <Grid Grid.Row="1" Grid.Column="1">
-                                    <TextBlock x:Name="EmptyTimelineHint" Text="Arraste vídeos da biblioteca para qualquer faixa (V1, V2…) · V Mover · C Tesoura · F Ajustar"
+                                    <TextBlock x:Name="EmptyTimelineHint" Text="Arraste vídeos da biblioteca para qualquer faixa (V1, V2…) · C ou S Cortar na agulha · F Ajustar"
                                                Style="{StaticResource MutedText}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                IsHitTestVisible="False" TextTrimming="CharacterEllipsis" Margin="14,0" Panel.ZIndex="1"/>
 
@@ -429,7 +409,7 @@
                                                   AllowDrop="True" DragOver="TimelineDragOver" DragLeave="TimelineDragLeave" Drop="TimelineDrop">
                                         <Grid x:Name="TimelineContentHost" HorizontalAlignment="Left" VerticalAlignment="Top">
                                             <Canvas x:Name="TimelineTrack" Background="Transparent" ClipToBounds="True"
-                                                    MouseLeftButtonDown="TrackMouseDown" MouseMove="TrackMouseMove" MouseLeave="TrackMouseLeave"
+                                                    MouseLeftButtonDown="TrackMouseDown" MouseMove="TrackMouseMove"
                                                     MouseLeftButtonUp="TrackMouseUp" LostMouseCapture="TrackLostCapture"
                                                     PreviewMouseDown="TrackPreviewMouseDown" PreviewMouseMove="TrackPreviewMouseMove" PreviewMouseUp="TrackPreviewMouseUp">
                                                 <Canvas x:Name="TrackLanesLayer" IsHitTestVisible="False"/>
@@ -438,8 +418,6 @@
                                                         CornerRadius="3" IsHitTestVisible="False" Visibility="Collapsed" Panel.ZIndex="13"/>
                                                 <Border x:Name="SnapGuideLine" Width="1" Background="{StaticResource Accent}" Opacity="0.85"
                                                         IsHitTestVisible="False" Visibility="Collapsed" Panel.ZIndex="14"/>
-                                                <Border x:Name="RazorCursorLine" Width="1.5" Background="{StaticResource Accent}" Opacity="0.95"
-                                                        IsHitTestVisible="False" Visibility="Collapsed" Panel.ZIndex="15"/>
                                                 <Border x:Name="DragTooltip" Background="{StaticResource OverlayBg}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
                                                         CornerRadius="3" Padding="6,3" IsHitTestVisible="False" Visibility="Collapsed" Panel.ZIndex="25">
                                                     <TextBlock x:Name="DragTooltipText" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource TextPrimary}"/>
