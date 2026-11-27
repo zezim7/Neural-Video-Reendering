@@ -54,13 +54,32 @@ jobs:
       - name: Compilar o editor
         run: ./Build.ps1 -SelfContained
       - name: Configurar Python para empacotamento
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Empacotar o motor e o editor
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
         run: python scripts/package-windows.py
+      - name: Testar a primeira abertura dos ZIPs
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        run: ./scripts/test-package.ps1 -Directory dist
+      - name: Disponibilizar pacote AMD
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoNR-AMD-win64
+          path: dist/VideoNR-AMD-win64.zip
+          compression-level: 0
+          retention-days: 14
+      - name: Disponibilizar pacote NVIDIA
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoNR-NVIDIA-win64
+          path: dist/VideoNR-NVIDIA-win64.zip
+          compression-level: 0
+          retention-days: 14
       - name: Publicar a release
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
         env:

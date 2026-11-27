@@ -182,27 +182,13 @@
                                             <Grid>
                                                 <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE714;" FontSize="12" Foreground="{StaticResource TextMuted}"/>
                                                 <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                <Border Background="#CC111111" CornerRadius="2" Padding="3,0.5"
-                                                        HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="2">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding ResolutionBadge}" Value="">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <TextBlock Text="{Binding ResolutionBadge}" FontFamily="{StaticResource MonoFont}"
-                                                               FontSize="9" Foreground="{StaticResource TextPrimary}"/>
-                                                </Border>
                                             </Grid>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" FontWeight="SemiBold" FontSize="12"/>
                                             <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SecondaryText}" FontSize="11" Margin="0,1.5,0,0" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Text="{Binding MetadataBadge}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextMuted}"
-                                                       FontSize="10" Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
+                                                       FontSize="11" Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
                                                         <Style.Triggers>

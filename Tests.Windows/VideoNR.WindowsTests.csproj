@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Tests/VideoFixture.cs" Link="VideoFixture.cs" />
     <ProjectReference Include="../App/VideoNR.csproj" />
   </ItemGroup>
 </Project>

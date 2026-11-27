@@ -98,6 +98,9 @@ Press `P` for the current frame, `Ctrl+Shift+P` for a screen region, or `Ctrl+V`
 dotnet run --project Tests/VideoNR.Tests.csproj
 dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
 
+# On a supported GPU, verify an extracted package and save the test chart, both renders, the trimmed MP4 and layer settings
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-package C:\VideoNR .\results
+
 # Build the editor (build/VideoNR.exe) and native adapter (build/Engine.exe)
 ./Build.ps1
 

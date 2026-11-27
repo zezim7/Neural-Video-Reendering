@@ -20,19 +20,6 @@ internal sealed class ClipItem(string path) : INotifyPropertyChanged
         }
     }
 
-    private TrimSelection trim;
-    public TrimSelection Trim
-    {
-        get => trim;
-        set
-        {
-            if (trim == value) return;
-            trim = value;
-            Notify(nameof(Trim));
-            Notify(nameof(Subtitle));
-        }
-    }
-
     private string status = "Na fila";
     public string Status
     {
@@ -141,16 +128,7 @@ internal sealed class ClipItem(string path) : INotifyPropertyChanged
         }
     }
 
-    public string Subtitle
-    {
-        get
-        {
-            if (Duration <= 0) return Status;
-            if (Trim == default) return $"{Status} · {TrimSelection.Format(Duration)}";
-            var clipLength = Math.Max(0, Trim.EndAt(Duration) - Trim.Start);
-            return $"{Status} · corte {TrimSelection.Format(clipLength)}";
-        }
-    }
+    public string Subtitle => Duration > 0 ? $"{Status} · {TrimSelection.Format(Duration)}" : Status;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

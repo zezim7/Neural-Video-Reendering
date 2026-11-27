@@ -98,6 +98,9 @@ Na comparação, **Sem NR** e **NR** passam pelo mesmo motor e pela mesma codifi
 dotnet run --project Tests/VideoNR.Tests.csproj
 dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
 
+# Em uma GPU compatível, verificar um pacote extraído e salvar o padrão de teste, as duas imagens, o MP4 cortado e os parâmetros
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-package C:\VideoNR .\results
+
 # Compilar o editor (build/VideoNR.exe) e o adaptador nativo (build/Engine.exe)
 ./Build.ps1
 

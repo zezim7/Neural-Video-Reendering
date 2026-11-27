@@ -98,6 +98,9 @@
 dotnet run --project Tests/VideoNR.Tests.csproj
 dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
 
+# 在兼容 GPU 上验证解压后的便携包，保存测试图、两种渲染结果、裁剪后的 MP4 和参数
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-package C:\VideoNR .\results
+
 # 编译编辑器 (build/VideoNR.exe) 与原生适配器 (build/Engine.exe)
 ./Build.ps1
 

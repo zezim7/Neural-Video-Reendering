@@ -128,8 +128,6 @@ clipItem.VideoHeight = 480;
 AssertEqual("480p", clipItem.ResolutionBadge, "ClipItem ResolutionBadge 480p");
 clipItem.Duration = 125;
 AssertEqual("Na fila · 00:02:05", clipItem.Subtitle, "ClipItem subtitle with full duration");
-clipItem.Trim = new TrimSelection(10, 40);
-AssertEqual("Na fila · corte 00:00:30", clipItem.Subtitle, "ClipItem subtitle with trim");
 
 // --- VideoExporter.BuildArguments ---
 var request = new ExportRequest(
@@ -315,7 +313,7 @@ try
 
         var quad320 = MakeQuadrantImage(320, 240);
         var mp4A = Path.Combine(tempDir, "quad-320.mp4");
-        MediaFoundationFrameCodec.EncodeStillVideo(quad320, mp4A, frameCount: 2, fps: 30);
+        VideoFixture.EncodeStillVideo(quad320, mp4A, frameCount: 2, fps: 30);
         var decoded320 = MediaFoundationFrameCodec.DecodeFrame(mp4A, 0);
         AssertEqual(320, decoded320.Width, "MF roundtrip 320 width");
         AssertEqual(240, decoded320.Height, "MF roundtrip 240 height");
@@ -329,7 +327,7 @@ try
         AssertEqual(322, quadPadded.Width, "MF odd padded width");
         AssertEqual(242, quadPadded.Height, "MF odd padded height");
         var mp4B = Path.Combine(tempDir, "quad-odd.mp4");
-        MediaFoundationFrameCodec.EncodeStillVideo(quadPadded, mp4B, frameCount: 2, fps: 30);
+        VideoFixture.EncodeStillVideo(quadPadded, mp4B, frameCount: 2, fps: 30);
         var decodedOdd = MediaFoundationFrameCodec.DecodeFrame(mp4B, 0).Crop(321, 241);
         AssertEqual(321, decodedOdd.Width, "MF odd cropped width");
         AssertEqual(241, decodedOdd.Height, "MF odd cropped height");
@@ -360,8 +358,8 @@ try
         var seg1Mp4 = Path.Combine(tempDir, "seg1.mp4");
         var seg2Mp4 = Path.Combine(tempDir, "seg2.mp4");
         var mergedMp4 = Path.Combine(tempDir, "merged.mp4");
-        MediaFoundationFrameCodec.EncodeStillVideo(redImg, seg1Mp4, frameCount: 15, fps: 30);
-        MediaFoundationFrameCodec.EncodeStillVideo(blueImg, seg2Mp4, frameCount: 15, fps: 30);
+        VideoFixture.EncodeStillVideo(redImg, seg1Mp4, frameCount: 15, fps: 30);
+        VideoFixture.EncodeStillVideo(blueImg, seg2Mp4, frameCount: 15, fps: 30);
 
         var lastConcatProgress = 0;
         VideoConcatenator.Concatenate([seg1Mp4, seg2Mp4], mergedMp4, preferHevc: false, p => lastConcatProgress = p, CancellationToken.None);
@@ -379,8 +377,20 @@ try
         AssertPixelNear(mergedStartFrame, 80, 60, 0, 0, 230, "VideoConcatenator first half red");
         AssertPixelNear(mergedEndFrame, 80, 60, 230, 0, 0, "VideoConcatenator second half blue (letterboxed)");
 
+        var variableRate = Path.Combine(tempDir, "variable-rate.mp4");
+        long[] numberedPts = [0, 166667, 583333, 750000, 1250000];
+        var numbered = Enumerable.Range(0, numberedPts.Length)
+            .Select(i => MakeSolid(160, 120, (byte)(i * 50), (byte)(i * 50), (byte)(i * 50))).ToArray();
+        VideoFixture.EncodeFrames(numbered[0], variableRate, numbered.Length, 60, i => numbered[i], numberedPts);
+        var actualFrames = MediaFoundationFrameCodec.ReadFrameTimes(variableRate, CancellationToken.None);
+        var lastPts = actualFrames.AtOrBefore(1);
+        AssertNear(0.125, lastPts, "Variable-rate final timestamp", .001);
+        var lastImage = MediaFoundationFrameCodec.DecodeFrame(variableRate, lastPts);
+        AssertPixelNear(lastImage, 80, 60, 200, 200, 200, "Variable-rate capture is the final numbered frame");
+        AssertNear(.0583333, actualFrames.Adjacent(.030, 1)!.Value, "Variable-rate step uses encoded PTS", .001);
+
         var singleFrame = Path.Combine(tempDir, "one-frame.mp4");
-        MediaFoundationFrameCodec.EncodeStillVideo(redImg, singleFrame, frameCount: 1, fps: 60);
+        VideoFixture.EncodeStillVideo(redImg, singleFrame, frameCount: 1, fps: 60);
         var cutOutput = Path.Combine(tempDir, "one-frame-cut.mp4");
         VideoConcatenator.Concatenate([singleFrame, seg2Mp4], cutOutput, false, null, CancellationToken.None);
         AssertPixelNear(MediaFoundationFrameCodec.DecodeFrame(cutOutput, 0), 80, 60, 0, 0, 230, "First visible 60 fps frame retained");
@@ -565,8 +575,8 @@ try
     AssertTrue(seq.RemoveTopEmptyTrack(), "RemoveTopEmptyTrack removes empty V3");
     AssertEqual(2, seq.TrackCount, "TrackCount restored to 2");
 
-    var segA = seq.AppendClip("/videos/clipA.mp4", 10.0, colorIndex: 0, trackIndex: 0);
-    var segB = seq.AppendClip("/videos/clipB.mp4", 6.0, colorIndex: 1, trackIndex: 0);
+    var segA = seq.AppendClip("/videos/clipA.mp4", 10.0, colorIndex: 0, trackIndex: 0)!;
+    var segB = seq.AppendClip("/videos/clipB.mp4", 6.0, colorIndex: 1, trackIndex: 0)!;
     AssertEqual(2, seq.Count, "TimelineSequence count after append");
     AssertNear(0.0, segA.TimelineStart, "segA starts at 0");
     AssertNear(10.0, segB.TimelineStart, "segB starts at 10");
@@ -589,7 +599,7 @@ try
     AssertTrue(seq.SplitSegmentAt(segA.Id, 0.01) is null, "SplitSegmentAt rejects cut too close to edge");
 
     // Multi-track composition: add overlay clip on V2 from 2.0s to 5.0s covering split seam!
-    var segOverlay = seq.AddClipAt("/videos/overlay.mp4", 3.0, timelineStart: 2.0, trackIndex: 1, colorIndex: 2);
+    var segOverlay = seq.AddClipAt("/videos/overlay.mp4", 3.0, timelineStart: 2.0, trackIndex: 1, colorIndex: 2)!;
     AssertEqual(1, segOverlay.TrackIndex, "Overlay clip lands on V2");
     AssertNear(2.0, segOverlay.TimelineStart, "Overlay clip starts at 2.0");
 
@@ -663,8 +673,8 @@ try
 
     // --- Regression: overlapping V2 ends before V1 finishes (transition must advance to V1 remainder) ---
     var overlapSeq = new TimelineSequence();
-    var ovV2 = overlapSeq.AddClipAt("/videos/top.mp4", 17.049, timelineStart: 0.0, trackIndex: 1, colorIndex: 0);
-    var ovV1 = overlapSeq.AddClipAt("/videos/bottom.mp4", 73.0, timelineStart: 8.365, trackIndex: 0, colorIndex: 1);
+    var ovV2 = overlapSeq.AddClipAt("/videos/top.mp4", 17.049, timelineStart: 0.0, trackIndex: 1, colorIndex: 0)!;
+    var ovV1 = overlapSeq.AddClipAt("/videos/bottom.mp4", 73.0, timelineStart: 8.365, trackIndex: 0, colorIndex: 1)!;
     var ovSlices = overlapSeq.ResolveComposition();
     AssertEqual(2, ovSlices.Count, "Overlapping V2+V1 resolves into 2 playback slices");
     AssertEqual(ovV2.Id, ovSlices[0].Segment.Id, "Slice 0 is V2");
@@ -691,7 +701,7 @@ try
     // --- Regression: failed/no-op mutations must not pollute Undo or wipe Redo ---
     var noOpSeq = new TimelineSequence();
     var noOpHist = new TimelineHistory();
-    var baseSeg = noOpSeq.AppendClip("/videos/base.mp4", 10.0, colorIndex: 0, trackIndex: 0);
+    var baseSeg = noOpSeq.AppendClip("/videos/base.mp4", 10.0, colorIndex: 0, trackIndex: 0)!;
     var beforeDup = noOpSeq.CaptureSnapshot();
     var dupSeg = noOpSeq.DuplicateSegment(baseSeg.Id);
     AssertTrue(dupSeg is not null, "No-op setup duplicate succeeds");

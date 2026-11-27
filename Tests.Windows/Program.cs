@@ -6,12 +6,19 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VideoNR;
 using VideoNR.Services;
+using VideoNR.Models;
+using VideoNR.Imaging;
 
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
+        if (args is ["--verify-package", var packageDir, var outputDir])
+        {
+            VerifyPackage(packageDir, outputDir);
+            return;
+        }
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
@@ -22,7 +29,7 @@ internal static class Program
         {
             var chart = TestChart(640, 360);
             var source = Path.Combine(dir, "Barras de cor.mp4");
-            MediaFoundationFrameCodec.EncodeStillVideo(chart, source, 60, 30);
+            VideoFixture.EncodeStillVideo(chart, source, 60, 30);
             var editor = new Editor(Path.Combine(dir, "settings.json")) { WindowState = WindowState.Normal };
             editor.Show();
             editor.AddPaths([source], true, targetTrackIndex: 0);
@@ -49,6 +56,34 @@ internal static class Program
             app.Shutdown();
             try { Directory.Delete(dir, true); } catch (IOException) { }
         }
+    }
+
+    private static void VerifyPackage(string packageDir, string outputDir)
+    {
+        var root = Path.GetFullPath(packageDir);
+        var adapter = EngineLocator.FindAdapter(root) ?? throw new FileNotFoundException("Engine.exe ausente no pacote.");
+        var vendor = new[] { "NVIDIA", "AMD" }.Single(v => EngineLocator.FindBundledEngine(v, root) is not null);
+        var engine = EngineLocator.FindBundledEngine(vendor, root)!;
+        var model = NrLayer.Models[NrLayer.InitialModelIndex(vendor == "NVIDIA" ? "sf-performance" : "amd-small", [vendor])];
+        var folder = Directory.CreateDirectory(Path.Combine(outputDir, $"VideoNR-{Guid.NewGuid():N}")).FullName;
+        var source = TestChart(640, 360);
+        var layers = new[] { new NrLayer().Encode() };
+        WpfImageBridge.SaveToFile(source, Path.Combine(folder, "input.png"), false);
+        var exporter = new VideoExporter();
+        var result = PrintProcessor.ProcessImageAsync(exporter, adapter, engine, source, model.Tag, layers,
+            _ => { }, CancellationToken.None).GetAwaiter().GetResult();
+        WpfImageBridge.SaveToFile(result.Original!, Path.Combine(folder, "without-NR.png"), false);
+        WpfImageBridge.SaveToFile(result.Enhanced, Path.Combine(folder, "with-NR.png"), false);
+        var clip = Path.Combine(folder, "input.mp4");
+        VideoFixture.EncodeStillVideo(source, clip, 60, 60);
+        var output = Path.Combine(folder, "cut.mp4");
+        var request = new ExportRequest(adapter, engine, clip, output, .25, .75, "h264", model.Tag, layers);
+        exporter.ExportAsync(request, _ => { }, CancellationToken.None).GetAwaiter().GetResult();
+        var info = MediaFoundationFrameCodec.TryProbe(output);
+        if (info is null || Math.Abs(info.DurationSeconds - .5) > .05)
+            throw new InvalidOperationException("O trecho exportado deve durar meio segundo.");
+        File.WriteAllText(Path.Combine(folder, "parameters.txt"), $"Model: {model.Tag}\nLayer: {layers[0]}\nTrim: 0.25–0.75 s\n");
+        Console.WriteLine(folder);
     }
 
     private static void Snapshot(Window window, string name)

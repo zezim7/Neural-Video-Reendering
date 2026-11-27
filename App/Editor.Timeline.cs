@@ -927,7 +927,7 @@ public partial class Editor
         {
             SplitButton.IsEnabled = !busy && CanSplitAt(timelinePosition);
             var hasEngine = !busy && adapterPath is not null && EnginePath is not null;
-            FramePrintButton.IsEnabled = hasEngine && (sequence.LocateCompositionAt(timelinePosition) is not null || clip is not null);
+            FramePrintButton.IsEnabled = hasEngine && (sequence.LocateCompositionAt(timelinePosition) is not null || sequence.IsEmpty && clip is not null);
         }
     }
 

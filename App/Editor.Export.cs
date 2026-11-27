@@ -35,6 +35,20 @@ public partial class Editor
         clips.Select(c => c.Path).Concat(sequence.Segments.Select(s => s.SourcePath))
             .Any(path => destination.Equals(Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase));
 
+    private bool ConfirmDestination(string path, out bool overwrite)
+    {
+        overwrite = false;
+        if (IsSourcePath(path))
+        {
+            Status.Text = "O arquivo de saída não pode sobrescrever um dos vídeos de origem.";
+            return false;
+        }
+        if (!File.Exists(path)) return true;
+        overwrite = MessageBox.Show(this, $"Substituir {Path.GetFileName(path)}?", "Arquivo existente",
+            MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+        return overwrite;
+    }
+
     private async Task ExportSequenceAsync(string engine)
     {
         var slices = sequence.SnapshotComposition();
@@ -55,19 +69,14 @@ public partial class Editor
             Filter = "Vídeo MP4|*.mp4",
             DefaultExt = ".mp4",
             AddExtension = true,
-            OverwritePrompt = true,
+            OverwritePrompt = false,
             FileName = OutputStem(slices[0].Segment.SourcePath, anyNrLayers ? Math.Max(1, globalProfile.ActiveLayerCount) : 0, isSequence: slices.Count > 1),
             InitialDirectory = defaultDir
         };
         if (dialog.ShowDialog(this) != true) return;
 
         var destination = Path.GetFullPath(dialog.FileName);
-        var overwrite = File.Exists(destination);
-        if (IsSourcePath(destination))
-        {
-            Status.Text = "O arquivo de saída não pode sobrescrever um dos vídeos de origem.";
-            return;
-        }
+        if (!ConfirmDestination(destination, out var overwrite)) return;
 
         var folder = Path.GetDirectoryName(destination)!;
         var codec = HevcRadio.IsChecked == true ? "hevc" : "h264";
@@ -165,18 +174,13 @@ public partial class Editor
                 Filter = "Vídeo MP4|*.mp4",
                 DefaultExt = ".mp4",
                 AddExtension = true,
-                OverwritePrompt = true,
+                OverwritePrompt = false,
                 FileName = OutputStem(jobs[0].Item.Path, jobs[0].Layers.Length, isSequence: false),
                 InitialDirectory = Path.GetDirectoryName(jobs[0].Item.Path)
             };
             if (dialog.ShowDialog(this) != true) return;
             single = Path.GetFullPath(dialog.FileName);
-            overwrite = File.Exists(single);
-            if (IsSourcePath(single))
-            {
-                Status.Text = "O arquivo de saída não pode ser igual ao vídeo de origem.";
-                return;
-            }
+            if (!ConfirmDestination(single, out overwrite)) return;
             folder = Path.GetDirectoryName(single)!;
         }
         else
@@ -348,14 +352,7 @@ public partial class Editor
             sourceDuration = slice.Segment.SourceDuration;
             profile = GetEffectiveNrProfile(slice.Segment);
         }
-        else if (sequence.LocateAt(timelinePosition, selectedSegmentId) is { } hit)
-        {
-            targetPath = hit.Segment.SourcePath;
-            capturePosition = hit.SourceTime;
-            sourceDuration = hit.Segment.SourceDuration;
-            profile = GetEffectiveNrProfile(hit.Segment);
-        }
-        else if (clip is not null)
+        else if (sequence.IsEmpty && clip is not null)
         {
             targetPath = clip.Path;
             capturePosition = 0;
@@ -471,7 +468,7 @@ public partial class Editor
         {
             var bitmap = Clipboard.GetImage();
             if (bitmap is not null)
-                source = WpfImageBridge.FromBitmapSource(bitmap, forceOpaqueAlpha: true);
+                source = WpfImageBridge.FromBitmapSource(bitmap);
         }
         catch (ExternalException)
         {

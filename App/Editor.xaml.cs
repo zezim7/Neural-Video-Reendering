@@ -444,7 +444,7 @@ public partial class Editor : Window
 
         var hasEngine = !busy && adapterPath is not null && EnginePath is not null;
         ScreenPrintButton.IsEnabled = ImagePrintButton.IsEnabled = EmptyPrintButton.IsEnabled = hasEngine;
-        FramePrintButton.IsEnabled = hasEngine && (sequence.LocateCompositionAt(timelinePosition) is not null || clip is not null);
+        FramePrintButton.IsEnabled = hasEngine && (sequence.LocateCompositionAt(timelinePosition) is not null || sequence.IsEmpty && clip is not null);
 
         var activeSlices = sequence.ResolveComposition();
         if (IsBatchExportMode)
