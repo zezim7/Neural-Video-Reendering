@@ -4,7 +4,7 @@
 
 Editor de vídeo para Windows 11 x64. Monte a sequência em até seis faixas, aplique NR na GPU e exporte para MP4. Cada pacote portátil inclui o motor Veyra do fabricante escolhido.
 
-![Timeline com duas faixas, agulha de reprodução e controles de corte](docs/screenshots/editor-main.png)
+![Timeline com duas faixas, agulha de reprodução e controles de corte](docs/screenshots/editor-timeline.png)
 
 ## Montagem e exportação
 

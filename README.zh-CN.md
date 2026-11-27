@@ -4,7 +4,7 @@
 
 适用于 Windows 11 x64 的视频编辑器。可在最多六条轨道上剪辑、使用 GPU 进行神经渲染，并导出 MP4。每个便携包包含对应显卡厂商的 Veyra 引擎。
 
-![双轨时间线、播放头与剪辑控件](docs/screenshots/editor-main.png)
+![双轨时间线、播放头与剪辑控件](docs/screenshots/editor-timeline.png)
 
 ## 时间线与导出
 

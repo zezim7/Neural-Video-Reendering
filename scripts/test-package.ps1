@@ -7,7 +7,7 @@ foreach ($vendor in 'NVIDIA', 'AMD') {
     try {
         $zip = Resolve-Path (Join-Path $Directory "VideoNR-$vendor-win64.zip")
         [IO.Compression.ZipFile]::ExtractToDirectory($zip.Path, $temp)
-        foreach ($item in 'VideoNR.exe', 'Engine.exe', 'README.pt-BR.md', 'docs/screenshots/editor-main.png') {
+        foreach ($item in 'VideoNR.exe', 'Engine.exe', 'README.pt-BR.md', 'docs/screenshots/editor-timeline.png') {
             if (!(Test-Path (Join-Path $temp $item))) { throw "Arquivo ausente: $item" }
         }
         $app = Start-Process (Join-Path $temp 'VideoNR.exe') -WorkingDirectory $temp -PassThru
