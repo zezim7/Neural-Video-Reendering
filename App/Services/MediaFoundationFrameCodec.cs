@@ -88,6 +88,47 @@ internal static class MediaFoundationFrameCodec
         }
     }
 
+    internal static FrameTimes ReadFrameTimes(string path, CancellationToken token)
+    {
+        CheckHr(MFStartup(MfApiVersion, MfStartupNoSocket), "MFStartup");
+        IMFSourceReader? reader = null;
+        try
+        {
+            CheckHr(MFCreateSourceReaderFromURL(path, null, out reader), "Open source");
+            CheckHr(reader.SetStreamSelection(MfSourceReaderAllStreams, false), "Deselect streams");
+            CheckHr(reader.SetStreamSelection(MfSourceReaderFirstVideoStream, true), "Select video");
+            var times = new List<long>();
+            var emptyReads = 0;
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                var hr = reader.ReadSample(MfSourceReaderFirstVideoStream, 0, out _, out var flags, out var pts, out var sample);
+                try
+                {
+                    CheckHr(hr, "Read presentation timestamp");
+                    if ((flags & MfSourceReaderFlagError) != 0)
+                        throw new IOException("Falha na leitura dos tempos dos quadros.");
+                    if (sample is not null)
+                    {
+                        times.Add(pts);
+                        emptyReads = 0;
+                    }
+                    if ((flags & MfSourceReaderFlagEndOfStream) != 0) break;
+                    if (sample is null && ++emptyReads > 128)
+                        throw new IOException("A origem parou de fornecer quadros.");
+                }
+                finally { ReleaseCom(sample); }
+            }
+            if (times.Count == 0) throw new IOException("Nenhum quadro na origem.");
+            return new FrameTimes(times);
+        }
+        finally
+        {
+            ReleaseCom(reader);
+            _ = MFShutdown();
+        }
+    }
+
     internal static void EncodeStillVideo(RawImage image, string outputMp4Path, int frameCount = 2, int fps = 30)
     {
         if (!OperatingSystem.IsWindows())
@@ -246,7 +287,7 @@ internal static class MediaFoundationFrameCodec
                 if (sample is not null)
                 {
                     emptyReads = 0;
-                    if (targetHns <= 0 || timestamp >= targetHns - 150_000)
+                    if (targetHns <= 0 || timestamp >= targetHns)
                     {
                         ReleaseCom(selectedSample);
                         selectedSample = sample;

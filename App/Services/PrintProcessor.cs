@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 
 namespace VideoNR.Services;
 
@@ -9,10 +8,10 @@ internal static class PrintProcessor
 {
     internal static double SafeVideoCaptureTime(double position, double duration)
     {
-        if (duration <= 0 || !double.IsFinite(position) || !double.IsFinite(duration))
+        if (!double.IsFinite(position))
             return 0;
 
-        return Math.Clamp(position, 0, Math.Max(0, duration - 0.05));
+        return duration > 0 && double.IsFinite(duration) ? Math.Clamp(position, 0, duration) : Math.Max(0, position);
     }
 
     internal static async Task<PrintResult> ProcessVideoFrameAsync(
@@ -44,26 +43,7 @@ internal static class PrintProcessor
                 encodedLayers,
                 MaxFrames: 1);
 
-            await exporter.ExportAsync(request, onProgress, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var enhanced = await Task.Run(() => MediaFoundationFrameCodec.DecodeFrame(outputMp4, 0), cancellationToken);
-
-            RawImage? original = null;
-            try
-            {
-                var decodedOriginal = await Task.Run(
-                    () => MediaFoundationFrameCodec.DecodeFrame(videoPath, captureTime),
-                    cancellationToken);
-                if (decodedOriginal.Width == enhanced.Width && decodedOriginal.Height == enhanced.Height)
-                    original = decodedOriginal;
-            }
-            catch (Exception error) when (error is IOException or COMException or UnauthorizedAccessException or NotSupportedException or InvalidOperationException)
-            {
-                original = null;
-            }
-
-            return new PrintResult(enhanced, original, WasDownscaled: false);
+            return await RenderComparisonAsync(exporter, request, onProgress, cancellationToken);
         }
         finally
         {
@@ -92,18 +72,18 @@ internal static class PrintProcessor
         var tempDir = CreateTempDirectory();
         try
         {
-            var inputMp4 = Path.Combine(tempDir, "still-in.mp4");
+            var inputPath = Path.Combine(tempDir, "still.y4m");
             var outputMp4 = Path.Combine(tempDir, "still-out.mp4");
 
             await Task.Run(
-                () => MediaFoundationFrameCodec.EncodeStillVideo(padded, inputMp4, frameCount: 2, fps: 30),
+                () => StillFrameInput.Write(padded, inputPath, cancellationToken),
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             var request = new ExportRequest(
                 adapterPath,
                 enginePath,
-                inputMp4,
+                inputPath,
                 outputMp4,
                 0,
                 0,
@@ -112,25 +92,30 @@ internal static class PrintProcessor
                 encodedLayers,
                 MaxFrames: 1);
 
-            await exporter.ExportAsync(request, onProgress, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var enhanced = await Task.Run(() =>
-            {
-                var decoded = MediaFoundationFrameCodec.DecodeFrame(outputMp4, 0);
-                return (wasPadded || decoded.Width != working.Width || decoded.Height != working.Height)
-                    && decoded.Width >= working.Width
-                    && decoded.Height >= working.Height
-                    ? decoded.Crop(working.Width, working.Height)
-                    : decoded;
-            }, cancellationToken);
-
-            return new PrintResult(enhanced, working, wasDownscaled);
+            var result = await RenderComparisonAsync(exporter, request, onProgress, cancellationToken);
+            if (!wasPadded) return result with { WasDownscaled = wasDownscaled };
+            return new PrintResult(result.Enhanced.Crop(working.Width, working.Height),
+                result.Original?.Crop(working.Width, working.Height), wasDownscaled);
         }
         finally
         {
             TryDeleteDirectory(tempDir);
         }
+    }
+
+    private static async Task<PrintResult> RenderComparisonAsync(
+        VideoExporter exporter, ExportRequest request, Action<int> progress, CancellationToken token)
+    {
+        var baseline = request with
+        {
+            OutputPath = Path.Combine(Path.GetDirectoryName(request.OutputPath)!, "reference.mp4"),
+            EncodedLayers = []
+        };
+        await exporter.ExportAsync(baseline, value => progress(value / 2), token);
+        await exporter.ExportAsync(request, value => progress(5000 + value / 2), token);
+        return await Task.Run(() => new PrintResult(
+            MediaFoundationFrameCodec.DecodeFrame(request.OutputPath),
+            MediaFoundationFrameCodec.DecodeFrame(baseline.OutputPath), WasDownscaled: false), token);
     }
 
     private static string CreateTempDirectory()

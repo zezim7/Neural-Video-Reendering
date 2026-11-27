@@ -20,7 +20,6 @@ public partial class Editor : Window
 {
     private const int LayerLimit = 4;
     private const int CustomPresetLimit = 8;
-    private const double FrameStepSeconds = 1.0 / 30.0;
     private const string VideoFilter = "Vídeos|*.mp4;*.mkv;*.mov;*.webm;*.avi;*.m4v;*.mts;*.m2ts;*.wmv;*.flv;*.ts|Todos os arquivos|*.*";
     private const string ImageFilter = "Imagens|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.tif;*.tiff|Todos os arquivos|*.*";
     private const string PlayGlyph = "\uE768";
@@ -1188,6 +1187,7 @@ public partial class Editor : Window
         {
             SavePreferences();
             lifetimeCts.Cancel();
+            indexingCancellation?.Dispose();
             lifetimeCts.Dispose();
             clock.Stop();
             Player.Close();

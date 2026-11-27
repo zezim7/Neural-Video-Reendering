@@ -342,7 +342,9 @@ public partial class Editor
         if (sequence.LocateCompositionAt(timelinePosition) is { } slice)
         {
             targetPath = slice.Segment.SourcePath;
-            capturePosition = slice.SourceStart + Math.Max(0, timelinePosition - slice.TimelineStart);
+            capturePosition = timelinePosition >= slice.TimelineEnd
+                ? Math.Max(slice.SourceStart, slice.SourceEnd - 1.0 / TimeSpan.TicksPerSecond)
+                : slice.SourceStart + Math.Max(0, timelinePosition - slice.TimelineStart);
             sourceDuration = slice.Segment.SourceDuration;
             profile = GetEffectiveNrProfile(slice.Segment);
         }
@@ -375,6 +377,21 @@ public partial class Editor
         PrintResult? result = null;
         await RunExportTask("Renderizando print do frame com NR…", async cancellationToken =>
         {
+            if (capturePosition > 0)
+            {
+                var requested = PrintProcessor.SafeVideoCaptureTime(capturePosition, sourceDuration);
+                try
+                {
+                    var frames = await GetFrameTimesAsync(targetPath).WaitAsync(cancellationToken);
+                    // FFmpeg compares rational PTS against the inclusive start. Allow for MF timestamp rounding.
+                    capturePosition = Math.Max(0, frames.AtOrBefore(requested) - 0.000001);
+                }
+                catch (IOException error)
+                {
+                    if (sourceDuration > 0 && requested >= sourceDuration - 0.000001)
+                        throw new IOException("O Windows não conseguiu identificar o último quadro deste arquivo.", error);
+                }
+            }
             result = await PrintProcessor.ProcessVideoFrameAsync(
                 exporter,
                 adapter,

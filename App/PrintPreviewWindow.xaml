@@ -46,9 +46,9 @@
                             <RadioButton x:Name="EnhancedRadio" Content="NR" GroupName="ViewMode"
                                          Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
                                          ToolTip="Mostrar resultado NR"/>
-                            <RadioButton x:Name="OriginalRadio" Content="Original" GroupName="ViewMode"
+                            <RadioButton x:Name="OriginalRadio" Content="Sem NR" GroupName="ViewMode"
                                          Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
-                                         ToolTip="Mostrar imagem original"/>
+                                         ToolTip="Mostrar o mesmo quadro exportado com NR desligado"/>
                         </StackPanel>
                     </Border>
 
@@ -107,7 +107,7 @@
                 <Border x:Name="OriginalPill" Background="{StaticResource OverlayBg}" BorderBrush="{StaticResource BorderControl}" BorderThickness="1"
                         CornerRadius="3" Padding="8,3" Margin="12" HorizontalAlignment="Left" VerticalAlignment="Top"
                         IsHitTestVisible="False">
-                    <TextBlock Text="Original" FontSize="11" FontWeight="SemiBold"/>
+                    <TextBlock Text="Sem NR" FontSize="11" FontWeight="SemiBold"/>
                 </Border>
 
                 <Border x:Name="NrPill" Background="{StaticResource AccentSubtle}" BorderBrush="{StaticResource Accent}" BorderThickness="1"

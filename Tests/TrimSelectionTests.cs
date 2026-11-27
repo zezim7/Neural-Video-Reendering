@@ -161,9 +161,9 @@ AssertEqual("motor/veyra_qml_ui.exe", singleFrameArgs[2], "BuildArguments MaxFra
 
 // --- PrintProcessor.SafeVideoCaptureTime ---
 AssertNear(0.0, PrintProcessor.SafeVideoCaptureTime(double.NaN, 10.0), "SafeVideoCaptureTime NaN returns 0");
-AssertNear(0.0, PrintProcessor.SafeVideoCaptureTime(5.0, 0.0), "SafeVideoCaptureTime zero duration returns 0");
+AssertNear(5.0, PrintProcessor.SafeVideoCaptureTime(5.0, 0.0), "Unknown duration preserves requested time");
 AssertNear(0.0, PrintProcessor.SafeVideoCaptureTime(-2.0, 10.0), "SafeVideoCaptureTime negative clamps to 0");
-AssertNear(9.95, PrintProcessor.SafeVideoCaptureTime(10.0, 10.0), "SafeVideoCaptureTime clamps before EOF");
+AssertNear(10.0, PrintProcessor.SafeVideoCaptureTime(10.0, 10.0), "End position retained for timestamp lookup");
 AssertNear(4.25, PrintProcessor.SafeVideoCaptureTime(4.25, 10.0), "SafeVideoCaptureTime preserves middle timestamp");
 
 // --- RawImage ---
@@ -215,9 +215,54 @@ AssertTrue(downscaled.Width <= 4096 && downscaled.Height <= 2304, "DownscaleIfEx
 AssertTrue((downscaled.Width & 1) == 0 && (downscaled.Height & 1) == 0, "DownscaleIfExceeds produces even dims");
 
 // --- EngineLocator ---
+var vfr = new FrameTimes([0, 166667, 416667, 583333, 583333]);
+AssertNear(.0416667, vfr.Adjacent(.0166667, 1)!.Value, "VFR next timestamp");
+AssertNear(.0166667, vfr.Adjacent(.0416667, -1)!.Value, "VFR previous timestamp");
+AssertNear(.0583333, vfr.AtOrBefore(.1), "EOF uses last actual frame");
+AssertNear(.0166667, vfr.AtOrBefore(.04), "Display frame at intermediate VFR position");
+
+AssertEqual(3, NrLayer.InitialModelIndex("original", ["AMD"]), "AMD-only ZIP selects AMD on first launch");
+AssertEqual(4, NrLayer.InitialModelIndex("amd-original", ["AMD", "NVIDIA"]), "Installed preference retained");
+AssertEqual(0, SettingsStore.ToNrLayers(new UserSettings(Layers: []), 4).Count, "Empty NR profile survives reload");
+
+var cuts = new TimelineSequence();
+var baseClip = cuts.AddClipAt("first.mp4", 10, 0, 0, new TrimSelection(2, 6))!;
+var upperClip = cuts.AddClipAt("upper.mp4", 1, 1.0 / 60, 1)!;
+var export = cuts.SnapshotComposition();
+AssertEqual(3, export.Count, "Both sides of overlap survive export");
+AssertNear(1.0 / 60, export[0].Duration, "One visible frame at 60 fps survives");
+AssertNear(2, export[0].SourceStart, "First slice uses source trim");
+AssertNear(6, cuts.EditedSegments().First().SourceEnd, "Individual edited export preserves full trimmed segment");
+cuts.Tracks[1].Visible = false;
+AssertEqual(1, cuts.EditedSegments().Count(), "Hidden track excluded from edited batch");
+baseClip.Enabled = false;
+AssertEqual(0, cuts.EditedSegments().Count(), "Disabled segment excluded from batch");
+cuts.Tracks[0].Locked = true;
+AssertTrue(cuts.AddClipAt("other.mp4", 2, 0, 0) is null, "Lock blocks insertion");
+AssertTrue(cuts.AppendClip("other.mp4", 2) is null, "Lock blocks append");
+AssertEqual(0, cuts.RemoveBySourcePath("first.mp4"), "Lock protects library removal");
+AssertEqual(2, cuts.Count, "Locked edits leave all segments intact");
+
 var tempDir = Directory.CreateTempSubdirectory("VideoNR-Test-").FullName;
 try
 {
+    var dest = Path.Combine(tempDir, "shared.mp4");
+    using (var first = new OutputTransaction(dest))
+    using (var second = new OutputTransaction(dest))
+    {
+        File.WriteAllText(first.StagedPath, "finished");
+        File.WriteAllText(second.StagedPath, "other");
+        first.Commit(false, CancellationToken.None);
+        try { second.Commit(false, CancellationToken.None); AssertTrue(false, "Collision should fail"); }
+        catch (IOException) { }
+        try { second.Commit(true, new CancellationToken(true)); AssertTrue(false, "Canceled replace should fail"); }
+        catch (OperationCanceledException) { }
+    }
+    AssertEqual("finished", File.ReadAllText(dest), "Collision and cancellation preserve completed output");
+    var rawPath = Path.Combine(tempDir, "sample.y4m");
+    var tinyFrame = new RawImage([0,0,0,255, 255,255,255,255, 0,0,0,0, 255,255,255,255], 2, 2);
+    StillFrameInput.Write(tinyFrame, rawPath, CancellationToken.None);
+    AssertTrue(File.ReadAllBytes(rawPath).TakeLast(6).SequenceEqual(new byte[] {16,235,16,235,128,128}), "Raw YUV planes preserve black, white and neutral chroma");
     AssertEqual<string?>(null, EngineLocator.FindAdapter(tempDir), "FindAdapter returns null when missing");
     var adapterFile = Path.Combine(tempDir, "Engine.exe");
     File.WriteAllText(adapterFile, "");
@@ -334,6 +379,15 @@ try
         AssertPixelNear(mergedStartFrame, 80, 60, 0, 0, 230, "VideoConcatenator first half red");
         AssertPixelNear(mergedEndFrame, 80, 60, 230, 0, 0, "VideoConcatenator second half blue (letterboxed)");
 
+        var singleFrame = Path.Combine(tempDir, "one-frame.mp4");
+        MediaFoundationFrameCodec.EncodeStillVideo(redImg, singleFrame, frameCount: 1, fps: 60);
+        var cutOutput = Path.Combine(tempDir, "one-frame-cut.mp4");
+        VideoConcatenator.Concatenate([singleFrame, seg2Mp4], cutOutput, false, null, CancellationToken.None);
+        AssertPixelNear(MediaFoundationFrameCodec.DecodeFrame(cutOutput, 0), 80, 60, 0, 0, 230, "First visible 60 fps frame retained");
+        AssertPixelNear(MediaFoundationFrameCodec.DecodeFrame(cutOutput, 0.04), 80, 60, 230, 0, 0, "Next clip follows the short slice");
+        var timestampIndex = MediaFoundationFrameCodec.ReadFrameTimes(seg2Mp4, CancellationToken.None);
+        AssertNear(14.0 / 30, timestampIndex.AtOrBefore(1), "Last encoded presentation timestamp", .003);
+
         // --- VideoConcatenator Live Roundtrip (Interleaved Audio+Video + Silent Video) ---
         void EncodeAudioVideoMp4(RawImage img, string outPath, int frameCount, uint fps)
         {
@@ -449,7 +503,14 @@ try
                     MediaFoundationInterop.CheckHr(MediaFoundationInterop.MFCreateMemoryBuffer(audioBytes, out abuf), "abuf");
                     MediaFoundationInterop.CheckHr(abuf.Lock(out var aptr, out _, out _), "alock");
                     aLocked = true;
-                    System.Runtime.InteropServices.Marshal.Copy(new byte[audioBytes], 0, aptr, (int)audioBytes);
+                    var pcm = new short[totalSamples * ch];
+                    for (var i = 0; i < totalSamples; i++)
+                    {
+                        // The tone begins 150 ms into the second clip.
+                        var value = i < rate * 0.15 ? (short)0 : (short)(12000 * Math.Sin(2 * Math.PI * 440 * i / rate));
+                        pcm[2 * i] = pcm[2 * i + 1] = value;
+                    }
+                    System.Runtime.InteropServices.Marshal.Copy(pcm, 0, aptr, pcm.Length);
                     MediaFoundationInterop.CheckHr(abuf.Unlock(), "aunlock");
                     aLocked = false;
                     MediaFoundationInterop.CheckHr(abuf.SetCurrentLength(audioBytes), "alen");
@@ -482,6 +543,8 @@ try
         EncodeAudioVideoMp4(greenImg, segAvMp4, frameCount: 15, fps: 30);
         VideoConcatenator.Concatenate([seg1Mp4, segAvMp4], mergedMixedMp4, preferHevc: false, null, CancellationToken.None);
         var mixedProbe = MediaFoundationFrameCodec.TryProbe(mergedMixedMp4);
+        var onset = AudioFixture.FindToneOnset(mergedMixedMp4);
+        AssertNear(0.65, onset, "Tone begins 150 ms after silent half-second clip", .065);
         AssertTrue(mixedProbe is { HasAudio: true }, "VideoConcatenator interleaved pass preserves audio across silent+A/V segments");
         AssertTrue(mixedProbe!.DurationSeconds >= 0.85, "VideoConcatenator mixed A/V duration >= 0.85s");
         AssertPixelNear(MediaFoundationFrameCodec.DecodeFrame(mergedMixedMp4, 0.05), 80, 60, 0, 0, 230, "VideoConcatenator mixed A/V first half red");

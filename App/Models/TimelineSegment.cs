@@ -124,7 +124,7 @@ internal sealed class TimelineSegment
     public void UpdateSourceDuration(double duration)
     {
         if (!double.IsFinite(duration) || duration <= 0) return;
-        var wasFullLength = SourceDuration <= 0 || Math.Abs(SourceEnd - SourceDuration) < 0.02;
+        var wasFullLength = SourceDuration <= 0 || Math.Abs(SourceEnd - SourceDuration) < 0.0000001;
         SourceDuration = duration;
         if (SourceEnd <= 0 || wasFullLength)
         {
