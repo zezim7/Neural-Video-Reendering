@@ -58,8 +58,10 @@ def make_package(vendor, editor, output):
             for folder, prefix in ((editor, Path()), (engine, Path("motor"))):
                 for file in sorted(folder.rglob("*")):
                     package.write(file, (prefix / file.relative_to(folder)).as_posix())
-            for name in ("LICENSE.txt", "README.md", "DEPENDENCIAS.md"):
+            for name in ("LICENSE.txt", "README.md", "README.pt-BR.md", "README.zh-CN.md", "DEPENDENCIAS.md"):
                 package.write(ROOT / name, name)
+            for image in sorted((ROOT / "docs/screenshots").glob("*.png")):
+                package.write(image, image.relative_to(ROOT).as_posix())
         staged.replace(destination)
 
 

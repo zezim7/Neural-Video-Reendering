@@ -77,8 +77,13 @@ public partial class Editor : Window
     private Point queueDragOrigin;
     private bool queueDragArmed;
 
-    public Editor()
+    private readonly string? settingsPath;
+
+    public Editor() : this(null) { }
+
+    internal Editor(string? settingsPath)
     {
+        this.settingsPath = settingsPath;
         InitializeComponent();
         WindowDarkMode.Apply(this, RootGrid);
 
@@ -86,7 +91,7 @@ public partial class Editor : Window
         LayerCards.ItemsSource = layers;
         NrVersion.ItemsSource = NrLayer.Models;
 
-        var saved = SettingsStore.Load();
+        var saved = SettingsStore.Load(settingsPath);
         globalNrEnabled = saved.NrEnabled;
         NrSwitch.IsChecked = saved.NrEnabled;
         if (saved.CodecIndex == 1) HevcRadio.IsChecked = true;
@@ -550,7 +555,7 @@ public partial class Editor : Window
         AddPaths(paths, filterExtensions: true);
     }
 
-    private void AddPaths(
+    internal void AddPaths(
         IEnumerable<string> paths,
         bool filterExtensions,
         int? targetTrackIndex = null,
@@ -1172,7 +1177,7 @@ public partial class Editor : Window
             TimelineHeight: TimelineRow.ActualHeight >= 190 ? TimelineRow.ActualHeight : 236,
             QueueOpen: queueOpen,
             CustomPresets: customPresets.Count > 0 ? customPresets.ToList() : null);
-        SettingsStore.Save(settings);
+        SettingsStore.Save(settings, settingsPath);
     }
 
     protected override void OnClosing(CancelEventArgs e)

@@ -34,6 +34,23 @@ jobs:
           arch: x64
       - name: Executar testes unitários
         run: dotnet run --project Tests/VideoNR.Tests.csproj
+      - name: Verificar as janelas e capturar a interface
+        run: dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interface-windows
+          path: ui-snapshots/*.png
+      - name: Registrar capturas para a atualização da documentação
+        if: github.head_ref == 'fix/timeline-export-fidelity' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Get-ChildItem ui-snapshots/*.png | ForEach-Object {
+            $body = @{ content = [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName)); encoding = 'base64' } | ConvertTo-Json -Compress
+            $sha = $body | gh api -X POST "repos/$env:GITHUB_REPOSITORY/git/blobs" --input - --jq .sha
+            if ($LASTEXITCODE -ne 0) { throw 'Falha ao registrar captura.' }
+            Write-Host "$($_.Name) $sha"
+          }
       - name: Compilar o editor
         run: ./Build.ps1 -SelfContained
       - name: Configurar Python para empacotamento
