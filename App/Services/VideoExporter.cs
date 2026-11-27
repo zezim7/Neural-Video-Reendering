@@ -15,7 +15,8 @@ internal sealed record ExportRequest(
     string Codec,
     string ModelTag,
     string[] EncodedLayers,
-    int MaxFrames = 0);
+    int MaxFrames = 0,
+    bool AllowOverwrite = false);
 
 internal sealed class VideoExporter
 {
@@ -54,12 +55,8 @@ internal sealed class VideoExporter
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var replaceExisting = File.Exists(request.OutputPath);
-        var folder = Path.GetDirectoryName(request.OutputPath)
-            ?? throw new IOException("Pasta de destino inválida.");
-        var exportTarget = replaceExisting
-            ? UniqueOutputPath(folder, Path.GetFileNameWithoutExtension(request.OutputPath) + "-tmp")
-            : request.OutputPath;
+        using var output = new OutputTransaction(request.OutputPath);
+        var exportTarget = output.StagedPath;
 
         var info = new ProcessStartInfo(request.AdapterPath)
         {
@@ -88,55 +85,38 @@ internal sealed class VideoExporter
             catch (InvalidOperationException) { }
         });
 
-        try
+        string? detail = null;
+        string? worker = null;
+        while (await process.StandardOutput.ReadLineAsync() is { } line)
         {
-            string? detail = null;
-            string? worker = null;
-            while (await process.StandardOutput.ReadLineAsync() is { } line)
+            if (line.StartsWith("PROGRESS ", StringComparison.Ordinal) && int.TryParse(line.AsSpan(9), out var value))
             {
-                if (line.StartsWith("PROGRESS ", StringComparison.Ordinal) && int.TryParse(line.AsSpan(9), out var value))
-                {
-                    onProgress(Math.Clamp(value, 0, 10000));
-                }
-                else if (line.StartsWith("WORKER ", StringComparison.Ordinal))
-                {
-                    worker = line[7..];
-                }
-                else if (!string.IsNullOrWhiteSpace(line))
-                {
-                    detail = line;
-                }
+                onProgress(Math.Clamp(value, 0, 10000));
             }
-
-            await process.WaitForExitAsync();
-            if (process.ExitCode == 3 || cancellationToken.IsCancellationRequested)
-                throw new OperationCanceledException(cancellationToken);
-
-            if (process.ExitCode == 2 && request.MaxFrames > 0)
-                throw new IOException("Engine.exe desatualizado (não suporta captura de 1 frame). Recompile com Build.ps1.");
-
-            if (process.ExitCode != 0 || new FileInfo(exportTarget) is not { Exists: true, Length: > 0 })
+            else if (line.StartsWith("WORKER ", StringComparison.Ordinal))
             {
-                var reason = detail ?? "Confira o codec de entrada e a compatibilidade da GPU.";
-                throw new IOException($"O motor não concluiu o processamento. {reason}" + (worker is null ? "" : $" (tarefa {worker})"));
+                worker = line[7..];
             }
-
-            if (replaceExisting)
-                File.Move(exportTarget, request.OutputPath, overwrite: true);
-
-            onProgress(10000);
+            else if (!string.IsNullOrWhiteSpace(line))
+            {
+                detail = line;
+            }
         }
-        catch
+
+        await process.WaitForExitAsync();
+        if (process.ExitCode == 3 || cancellationToken.IsCancellationRequested)
+            throw new OperationCanceledException(cancellationToken);
+
+        if (process.ExitCode == 2 && request.MaxFrames > 0)
+            throw new IOException("Engine.exe desatualizado (não suporta captura de 1 frame). Recompile com Build.ps1.");
+
+        if (process.ExitCode != 0 || new FileInfo(exportTarget) is not { Exists: true, Length: > 0 })
         {
-            TryDeleteFile(exportTarget);
-            throw;
+            var reason = detail ?? "Confira o codec de entrada e a compatibilidade da GPU.";
+            throw new IOException($"O motor não concluiu o processamento. {reason}" + (worker is null ? "" : $" (tarefa {worker})"));
         }
-    }
 
-    private static void TryDeleteFile(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        output.Commit(request.AllowOverwrite, cancellationToken);
+        onProgress(10000);
     }
 }

@@ -31,12 +31,13 @@ public partial class Editor
             await ExportSequenceAsync(engine);
     }
 
+    private bool IsSourcePath(string destination) =>
+        clips.Select(c => c.Path).Concat(sequence.Segments.Select(s => s.SourcePath))
+            .Any(path => destination.Equals(Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase));
+
     private async Task ExportSequenceAsync(string engine)
     {
-        var slices = sequence.ResolveComposition()
-            .Where(s => s.Duration >= TimelineSegment.MinDuration * 0.5)
-            .Select(s => s with { Segment = s.Segment.Clone(preserveId: true) })
-            .ToList();
+        var slices = sequence.SnapshotComposition();
 
         if (slices.Count == 0)
         {
@@ -61,7 +62,8 @@ public partial class Editor
         if (dialog.ShowDialog(this) != true) return;
 
         var destination = Path.GetFullPath(dialog.FileName);
-        if (slices.Any(s => destination.Equals(Path.GetFullPath(s.Segment.SourcePath), StringComparison.OrdinalIgnoreCase)))
+        var overwrite = File.Exists(destination);
+        if (IsSourcePath(destination))
         {
             Status.Text = "O arquivo de saída não pode sobrescrever um dos vídeos de origem.";
             return;
@@ -80,7 +82,7 @@ public partial class Editor
                 var effectiveLayers = GetEffectiveNrProfile(slice.Segment).EncodeActiveLayers();
                 var request = new ExportRequest(
                     adapterPath!, engine, slice.Segment.SourcePath, destination,
-                    slice.SourceStart, slice.SourceEnd, codec, model, effectiveLayers);
+                    slice.SourceStart, slice.SourceEnd, codec, model, effectiveLayers, AllowOverwrite: overwrite);
 
                 await exporter.ExportAsync(request, value =>
                 {
@@ -129,7 +131,7 @@ public partial class Editor
                         var overall = 8000 + (int)Math.Round(value * 0.2);
                         ReportSequenceProgress("Unindo trechos e áudio", overall);
                     },
-                    cancellationToken);
+                    cancellationToken, allowOverwrite: overwrite);
 
                 outputFolder = folder;
                 Status.Text = $"Sequência ({slices.Count} partes) exportada em {Path.GetFileName(destination)}.";
@@ -143,13 +145,17 @@ public partial class Editor
 
     private async Task ExportBatchAsync(string engine)
     {
-        if (clips.Count == 0) return;
-        var jobs = clips.ToArray();
+        var global = GetGlobalNrProfile().EncodeActiveLayers();
+        var jobs = EditedExportRadio.IsChecked == true
+            ? sequence.EditedSegments().Select(s => (
+                Item: FindClipByPath(s.SourcePath) ?? new ClipItem(s.SourcePath),
+                Trim: new TrimSelection(s.SourceStart, s.SourceEnd),
+                Layers: GetEffectiveNrProfile(s).EncodeActiveLayers())).ToArray()
+            : clips.Select(c => (Item: c, Trim: default(TrimSelection), Layers: global)).ToArray();
+        if (jobs.Length == 0) return;
         string? single = null;
+        bool overwrite = false;
         string folder;
-
-        var globalProfile = GetGlobalNrProfile();
-        var encodedLayers = globalProfile.EncodeActiveLayers();
 
         if (jobs.Length == 1)
         {
@@ -160,12 +166,13 @@ public partial class Editor
                 DefaultExt = ".mp4",
                 AddExtension = true,
                 OverwritePrompt = true,
-                FileName = OutputStem(jobs[0].Path, encodedLayers.Length, isSequence: false),
-                InitialDirectory = Path.GetDirectoryName(jobs[0].Path)
+                FileName = OutputStem(jobs[0].Item.Path, jobs[0].Layers.Length, isSequence: false),
+                InitialDirectory = Path.GetDirectoryName(jobs[0].Item.Path)
             };
             if (dialog.ShowDialog(this) != true) return;
             single = Path.GetFullPath(dialog.FileName);
-            if (single.Equals(Path.GetFullPath(jobs[0].Path), StringComparison.OrdinalIgnoreCase))
+            overwrite = File.Exists(single);
+            if (IsSourcePath(single))
             {
                 Status.Text = "O arquivo de saída não pode ser igual ao vídeo de origem.";
                 return;
@@ -182,7 +189,7 @@ public partial class Editor
         Pause();
         var codec = HevcRadio.IsChecked == true ? "hevc" : "h264";
         var model = Model;
-        foreach (var item in jobs) item.Status = "Na fila";
+        foreach (var job in jobs) job.Item.Status = "Na fila";
 
         await RunExportTask("Preparando exportação em lote…", async cancellationToken =>
         {
@@ -190,7 +197,7 @@ public partial class Editor
             for (var i = 0; i < jobs.Length; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var item = jobs[i];
+                var (item, trim, encodedLayers) = jobs[i];
                 var destination = single ?? VideoExporter.UniqueOutputPath(folder, OutputStem(item.Path, encodedLayers.Length, isSequence: false));
                 var activity = $"Exportando {i + 1}/{jobs.Length}";
                 item.Status = "Exportando";
@@ -199,7 +206,7 @@ public partial class Editor
                 {
                     var request = new ExportRequest(
                         adapterPath!, engine, item.Path, destination,
-                        item.Trim.Start, item.Trim.End, codec, model, encodedLayers);
+                        trim.Start, trim.End, codec, model, encodedLayers, AllowOverwrite: overwrite);
 
                     await exporter.ExportAsync(request, value =>
                     {
