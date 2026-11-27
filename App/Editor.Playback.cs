@@ -1,6 +1,9 @@
 using System.Windows;
 using System.Windows.Input;
 using VideoNR.Models;
+using VideoNR.Services;
+using System.IO;
+using System.Runtime.InteropServices;
 
 namespace VideoNR;
 
@@ -110,7 +113,7 @@ public partial class Editor
                 FitTimelineToViewport(keepAutoFit: true);
         }
 
-        var seek = pendingSourceSeek ?? Math.Min(0.03, naturalDuration);
+        var seek = pendingSourceSeek ?? 0;
         pendingSourceSeek = null;
         if (naturalDuration > 0)
             seek = Math.Clamp(seek, 0, naturalDuration);
@@ -171,19 +174,62 @@ public partial class Editor
     private void StepBackFrameClick(object sender, RoutedEventArgs e) => StepFrame(-1);
     private void StepForwardFrameClick(object sender, RoutedEventArgs e) => StepFrame(1);
 
-    private void StepFrame(int deltaFrames)
+    private string? indexedPath;
+    private Task<FrameTimes>? frameTimesTask;
+    private CancellationTokenSource? indexingCancellation;
+    private bool stepping;
+
+    private Task<FrameTimes> GetFrameTimesAsync(string path)
     {
-        if (busy || sequence.TotalDuration <= 0) return;
+        if (frameTimesTask is null || frameTimesTask.IsFaulted || frameTimesTask.IsCanceled
+            || !string.Equals(indexedPath, path, StringComparison.OrdinalIgnoreCase))
+        {
+            indexingCancellation?.Cancel();
+            indexingCancellation?.Dispose();
+            indexingCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetimeCts.Token);
+            var token = indexingCancellation.Token;
+            indexedPath = path;
+            frameTimesTask = Task.Run(() => MediaFoundationFrameCodec.ReadFrameTimes(path, token), token);
+        }
+        return frameTimesTask;
+    }
+
+    private async void StepFrame(int direction)
+    {
+        if (busy || stepping || sequence.TotalDuration <= 0) return;
         Pause();
-
-        var slice = sequence.LocateCompositionAt(timelinePosition);
-        var fps = slice is { } s && FindClipByPath(s.Segment.SourcePath) is { FrameRate: > 0 } c
-            ? c.FrameRate.Value
-            : clip is { FrameRate: > 0 } fallback
-                ? fallback.FrameRate.Value
-                : 1.0 / FrameStepSeconds;
-
-        SeekTimeline(timelinePosition + deltaFrames * (1.0 / fps), autoPlay: false);
+        var position = timelinePosition;
+        var slices = sequence.ResolveComposition();
+        if (direction < 0) slices.Reverse();
+        stepping = true;
+        try
+        {
+            foreach (var s in slices)
+            {
+                if (direction > 0 && position >= s.TimelineEnd || direction < 0 && position <= s.TimelineStart)
+                    continue;
+                var next = s.TimelineStart;
+                if (direction < 0 || position >= s.TimelineStart)
+                {
+                    var frames = await GetFrameTimesAsync(s.Segment.SourcePath);
+                    var offset = Math.Clamp(position - s.TimelineStart, 0, s.Duration);
+                    var source = offset >= s.Duration ? s.SourceEnd : s.SourceStart + offset;
+                    var pts = frames.Adjacent(source, direction);
+                    if (direction > 0 && (pts is null || pts >= s.SourceEnd)) continue;
+                    if (pts is { } t && t > s.SourceStart) next += t - s.SourceStart;
+                }
+                if (IsLoaded && !busy && !playing && timelinePosition == position
+                    && sequence.LocateCompositionAt(next)?.Segment.Id == s.Segment.Id)
+                    SeekTimeline(next, autoPlay: false);
+                break;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error) when (error is IOException or COMException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Status.Text = $"Não foi possível localizar o quadro: {error.Message}";
+        }
+        finally { stepping = false; }
     }
 
     private void ToggleMute()
@@ -219,7 +265,7 @@ public partial class Editor
         }
 
         var lastEnd = composition[^1].TimelineEnd;
-        if (timelinePosition >= lastEnd - 0.02)
+        if (timelinePosition >= lastEnd)
             timelinePosition = composition[0].TimelineStart;
 
         if (sequence.LocateCompositionAt(timelinePosition) is null)
@@ -342,7 +388,7 @@ public partial class Editor
 
         EnsurePlayheadVisibleDuringPlayback();
 
-        if (playerSourceTime >= current.SourceEnd - 0.025)
+        if (playerSourceTime >= current.SourceEnd)
         {
             AdvanceFromSlice(current);
             return;

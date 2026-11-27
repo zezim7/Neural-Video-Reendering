@@ -13,6 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="VideoNR.WindowsTests" />
     <Resource Include="Assets\VideoNR.ico" />
   </ItemGroup>
 </Project>

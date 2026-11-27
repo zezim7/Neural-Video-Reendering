@@ -1,7 +1,7 @@
 <Window x:Class="VideoNR.PrintPreviewWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Visualização DLSS 5 / NR"
+        Title="Visualização NR"
         Width="1120" Height="760" MinWidth="760" MinHeight="520"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource WindowBg}"
@@ -43,12 +43,12 @@
                             <RadioButton x:Name="CompareRadio" Content="Comparar" GroupName="ViewMode"
                                          Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
                                          ToolTip="Comparar antes e depois (←/→ ajusta divisória)"/>
-                            <RadioButton x:Name="EnhancedRadio" Content="NR (DLSS 5)" GroupName="ViewMode"
+                            <RadioButton x:Name="EnhancedRadio" Content="NR" GroupName="ViewMode"
                                          Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
-                                         ToolTip="Mostrar resultado DLSS 5 / NR"/>
-                            <RadioButton x:Name="OriginalRadio" Content="Original" GroupName="ViewMode"
+                                         ToolTip="Mostrar resultado NR"/>
+                            <RadioButton x:Name="OriginalRadio" Content="Sem NR" GroupName="ViewMode"
                                          Style="{StaticResource SegmentedOption}" Checked="ViewModeChanged"
-                                         ToolTip="Mostrar imagem original"/>
+                                         ToolTip="Mostrar o mesmo quadro exportado com NR desligado"/>
                         </StackPanel>
                     </Border>
 
@@ -107,13 +107,13 @@
                 <Border x:Name="OriginalPill" Background="{StaticResource OverlayBg}" BorderBrush="{StaticResource BorderControl}" BorderThickness="1"
                         CornerRadius="3" Padding="8,3" Margin="12" HorizontalAlignment="Left" VerticalAlignment="Top"
                         IsHitTestVisible="False">
-                    <TextBlock Text="Original" FontSize="11" FontWeight="SemiBold"/>
+                    <TextBlock Text="Sem NR" FontSize="11" FontWeight="SemiBold"/>
                 </Border>
 
                 <Border x:Name="NrPill" Background="{StaticResource AccentSubtle}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
                         CornerRadius="3" Padding="8,3" Margin="12" HorizontalAlignment="Right" VerticalAlignment="Top"
                         IsHitTestVisible="False">
-                    <TextBlock Text="DLSS 5 / NR" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentHover}"/>
+                    <TextBlock Text="NR" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentHover}"/>
                 </Border>
             </Grid>
         </Border>

@@ -6,6 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       publish_release:
@@ -22,6 +23,9 @@ permissions:
 
 jobs:
   build-and-release:
+    if: github.event.action != 'labeled' || github.event.label.name == 'test-packages'
+    env:
+      BUILD_PACKAGES: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'test-packages') }}
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -34,16 +38,41 @@ jobs:
           arch: x64
       - name: Executar testes unitários
         run: dotnet run --project Tests/VideoNR.Tests.csproj
+      - name: Verificar as janelas e capturar a interface
+        run: dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interface-windows
+          path: ui-snapshots/*.png
       - name: Compilar o editor
         run: ./Build.ps1 -SelfContained
       - name: Configurar Python para empacotamento
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+        if: env.BUILD_PACKAGES == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Empacotar o motor e o editor
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+        if: env.BUILD_PACKAGES == 'true'
         run: python scripts/package-windows.py
+      - name: Testar a primeira abertura dos ZIPs
+        if: env.BUILD_PACKAGES == 'true'
+        run: ./scripts/test-package.ps1 -Directory dist
+      - name: Disponibilizar pacote AMD
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'test-packages')
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoNR-AMD-win64
+          path: dist/VideoNR-AMD-win64.zip
+          compression-level: 0
+          retention-days: 14
+      - name: Disponibilizar pacote NVIDIA
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'test-packages')
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoNR-NVIDIA-win64
+          path: dist/VideoNR-NVIDIA-win64.zip
+          compression-level: 0
+          retention-days: 14
       - name: Publicar a release
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
         env:

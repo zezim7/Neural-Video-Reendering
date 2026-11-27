@@ -43,7 +43,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE7A8;" FontSize="12"
                                Foreground="{StaticResource Accent}" Margin="2,0,8,0"/>
-                    <TextBlock Text="Arraste uma área para aplicar DLSS 5 / NR"
+                    <TextBlock Text="Arraste uma área para aplicar NR"
                                Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,12,0"/>
                     <Button Content="Monitor atual" Style="{StaticResource PrimaryButton}" Click="CaptureMonitorClick"
                             Padding="10,5" Margin="0,0,6,0" ToolTip="Capturar o monitor atual inteiro (Enter)"/>

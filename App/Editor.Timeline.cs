@@ -81,6 +81,11 @@ public partial class Editor
     {
         if (busy) return;
         var track = Math.Clamp(targetTrackIndex ?? activeTrackIndex, 0, TimelineSequence.MaxTracks - 1);
+        if (sequence.IsTrackLocked(track))
+        {
+            Status.Text = $"Desbloqueie V{track + 1} para inserir um trecho.";
+            return;
+        }
         var duration = item.Duration > 0 ? item.Duration : MediaFoundationFrameCodec.TryGetDuration(item.Path) ?? 0;
         if (duration > 0 && item.Duration <= 0)
             item.Duration = duration;
@@ -91,6 +96,7 @@ public partial class Editor
             ? sequence.AddClipAt(item.Path, duration, atTimelineSeconds.Value, track, colorIndex: GetColorIndexForSource(item.Path))
             : sequence.AppendClip(item.Path, duration, colorIndex: GetColorIndexForSource(item.Path), trackIndex: track);
 
+        if (seg is null) return;
         activeTrackIndex = seg.TrackIndex;
         selectedSegmentId = seg.Id;
 
@@ -230,9 +236,19 @@ public partial class Editor
         Status.Text = $"Clipe \"{copy.SourceName}\" duplicado em V{copy.TrackIndex + 1}.";
     }
 
+    private void OpenSegmentMenu(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
+
     private void ToggleSegmentEnabledClick(object sender, RoutedEventArgs e)
     {
-        if (busy || SelectedSegment is not { } seg) return;
+        if (busy || SelectedSegment is not { } seg || sequence.IsTrackLocked(seg.TrackIndex)) return;
         history.PushUndo(sequence, selectedSegmentId);
         seg.Enabled = !seg.Enabled;
         SyncTimelinePlaybackToPlayhead();
@@ -764,7 +780,7 @@ public partial class Editor
                     {
                         Text = sub,
                         FontFamily = monoFont,
-                        FontSize = 9.5,
+                        FontSize = 11,
                         Foreground = textSecondary,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         Margin = new Thickness(0, 0.5, 0, 0)
@@ -890,7 +906,7 @@ public partial class Editor
                 {
                     Text = TrimSelection.Format(t),
                     FontFamily = monoFont,
-                    FontSize = 9.5,
+                    FontSize = 11,
                     Foreground = labelBrush
                 };
                 Canvas.SetLeft(label, x + 3);
@@ -911,7 +927,7 @@ public partial class Editor
         {
             SplitButton.IsEnabled = !busy && CanSplitAt(timelinePosition);
             var hasEngine = !busy && adapterPath is not null && EnginePath is not null;
-            FramePrintButton.IsEnabled = hasEngine && (sequence.LocateCompositionAt(timelinePosition) is not null || clip is not null);
+            FramePrintButton.IsEnabled = hasEngine && (sequence.LocateCompositionAt(timelinePosition) is not null || sequence.IsEmpty && clip is not null);
         }
     }
 
@@ -1299,6 +1315,13 @@ public partial class Editor
             e.Effects = DragDropEffects.Copy;
             var pt = e.GetPosition(TimelineTrack);
             var targetTrack = YToTrackIndex(pt.Y);
+            if (sequence.IsTrackLocked(targetTrack))
+            {
+                DropSlotHighlight.Visibility = Visibility.Collapsed;
+                e.Effects = DragDropEffects.None;
+                e.Handled = true;
+                return;
+            }
             var rawT = XToTime(pt.X);
             var dropT = snapEnabled ? sequence.SnapTime(rawT, SnapThresholdSeconds(), timelinePosition) : rawT;
 
@@ -1331,6 +1354,7 @@ public partial class Editor
 
         var pt = e.GetPosition(TimelineTrack);
         var targetTrack = YToTrackIndex(pt.Y);
+        if (sequence.IsTrackLocked(targetTrack)) { e.Handled = true; return; }
         var rawT = XToTime(pt.X);
         var dropT = snapEnabled ? sequence.SnapTime(rawT, SnapThresholdSeconds(), timelinePosition) : rawT;
 

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <None Update="Fixtures/variable-rate.mp4" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../App/Models/*.cs" Link="Models/%(Filename)%(Extension)" />
     <Compile Include="../App/Services/*.cs" Link="Services/%(Filename)%(Extension)" />
   </ItemGroup>

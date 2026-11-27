@@ -18,27 +18,27 @@ internal static class VideoConcatenator
         string outputPath,
         bool preferHevc,
         Action<int>? onProgress,
-        CancellationToken cancellationToken) =>
-        Task.Run(() => Concatenate(inputPaths, outputPath, preferHevc, onProgress, cancellationToken), cancellationToken);
+        CancellationToken cancellationToken, bool allowOverwrite = false) =>
+        Task.Run(() => Concatenate(inputPaths, outputPath, preferHevc, onProgress, cancellationToken, allowOverwrite), cancellationToken);
 
     internal static void Concatenate(
         IReadOnlyList<string> inputPaths,
         string outputPath,
         bool preferHevc,
         Action<int>? onProgress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool allowOverwrite = false)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("A junção de vídeos via Media Foundation está disponível apenas no Windows.");
         if (inputPaths is null || inputPaths.Count == 0)
             throw new ArgumentException("Nenhum segmento informado para concatenação.", nameof(inputPaths));
 
+        cancellationToken.ThrowIfCancellationRequested();
+        using var output = new OutputTransaction(outputPath);
         if (inputPaths.Count == 1)
         {
-            var src = Path.GetFullPath(inputPaths[0]);
-            var dst = Path.GetFullPath(outputPath);
-            if (!src.Equals(dst, StringComparison.OrdinalIgnoreCase))
-                File.Copy(src, dst, overwrite: true);
+            File.Copy(inputPaths[0], output.StagedPath);
+            output.Commit(allowOverwrite, cancellationToken);
             onProgress?.Invoke(10000);
             return;
         }
@@ -77,14 +77,6 @@ internal static class VideoConcatenator
         }
         var defaultFrameDurationHns = Math.Max(1L, (long)Math.Round(10_000_000.0 / fpsValue));
 
-        var folder = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(folder))
-            Directory.CreateDirectory(folder);
-
-        var tempOutput = VideoExporter.UniqueOutputPath(
-            folder ?? Path.GetTempPath(),
-            Path.GetFileNameWithoutExtension(outputPath) + "-concat-tmp");
-
         CheckHr(MFStartup(MfApiVersion, MfStartupNoSocket), "MFStartup");
         IMFAttributes? writerAttrs = null;
         IMFSinkWriter? writer = null;
@@ -94,10 +86,10 @@ internal static class VideoConcatenator
             CheckHr(writerAttrs.SetUINT32(in MfSinkWriterDisableThrottling, 1), "SetUINT32(DisableThrottling)");
             CheckHr(writerAttrs.SetUINT32(in MfReadWriteEnableHardwareTransforms, 0), "SetUINT32(HardwareTransforms)");
 
-            CheckHr(MFCreateSinkWriterFromURL(tempOutput, IntPtr.Zero, writerAttrs, out writer), "MFCreateSinkWriterFromURL");
+            CheckHr(MFCreateSinkWriterFromURL(output.StagedPath, IntPtr.Zero, writerAttrs, out writer), "MFCreateSinkWriterFromURL");
 
             var videoStreamIndex = ConfigureVideoStream(writer, targetW, targetH, fpsNum, fpsDen, preferHevc);
-            uint? audioStreamIndex = anyAudio ? TryConfigureAudioStream(writer) : null;
+            uint? audioStreamIndex = anyAudio ? TryConfigureAudioStream(writer) ?? throw new IOException("Falha ao configurar a faixa AAC.") : null;
 
             CheckHr(writer.BeginWriting(), "BeginWriting");
 
@@ -136,15 +128,8 @@ internal static class VideoConcatenator
             ReleaseCom(writer);
             writer = null;
 
-            File.Move(tempOutput, outputPath, overwrite: true);
+            output.Commit(allowOverwrite, cancellationToken);
             onProgress?.Invoke(10000);
-        }
-        catch
-        {
-            ReleaseCom(writer);
-            writer = null;
-            TryDelete(tempOutput);
-            throw;
         }
         finally
         {
@@ -167,54 +152,39 @@ internal static class VideoConcatenator
         var packedPar = Pack2UInt32(1u, 1u);
         var bitrate = (uint)Math.Clamp((long)width * height * 16L, 10_000_000L, 50_000_000L);
 
-        Guid[] codecs = preferHevc ? [MfVideoFormatHevc, MfVideoFormatH264] : [MfVideoFormatH264];
-        Exception? lastError = null;
-
-        foreach (var codecGuid in codecs)
+        var codecGuid = preferHevc ? MfVideoFormatHevc : MfVideoFormatH264;
+        IMFMediaType? outType = null;
+        IMFMediaType? inType = null;
+        try
         {
-            IMFMediaType? outType = null;
-            IMFMediaType? inType = null;
-            try
-            {
-                CheckHr(MFCreateMediaType(out outType), "MFCreateMediaType(videoOut)");
-                CheckHr(outType.SetGUID(in MfMtMajorType, in MfMediaTypeVideo), "SetGUID(MajorType)");
-                CheckHr(outType.SetGUID(in MfMtSubtype, in codecGuid), "SetGUID(VideoCodec)");
-                CheckHr(outType.SetUINT32(in MfMtAvgBitrate, bitrate), "SetUINT32(Bitrate)");
-                CheckHr(outType.SetUINT32(in MfMtInterlaceMode, MfVideoInterlaceProgressive), "SetUINT32(Interlace)");
-                CheckHr(outType.SetUINT64(in MfMtFrameSize, packedSize), "SetUINT64(FrameSize)");
-                CheckHr(outType.SetUINT64(in MfMtFrameRate, packedRate), "SetUINT64(FrameRate)");
-                CheckHr(outType.SetUINT64(in MfMtPixelAspectRatio, packedPar), "SetUINT64(PAR)");
+            CheckHr(MFCreateMediaType(out outType), "MFCreateMediaType(videoOut)");
+            CheckHr(outType.SetGUID(in MfMtMajorType, in MfMediaTypeVideo), "SetGUID(MajorType)");
+            CheckHr(outType.SetGUID(in MfMtSubtype, in codecGuid), "SetGUID(VideoCodec)");
+            CheckHr(outType.SetUINT32(in MfMtAvgBitrate, bitrate), "SetUINT32(Bitrate)");
+            CheckHr(outType.SetUINT32(in MfMtInterlaceMode, MfVideoInterlaceProgressive), "SetUINT32(Interlace)");
+            CheckHr(outType.SetUINT64(in MfMtFrameSize, packedSize), "SetUINT64(FrameSize)");
+            CheckHr(outType.SetUINT64(in MfMtFrameRate, packedRate), "SetUINT64(FrameRate)");
+            CheckHr(outType.SetUINT64(in MfMtPixelAspectRatio, packedPar), "SetUINT64(PAR)");
 
-                if (writer.AddStream(outType, out var streamIndex) < 0)
-                    continue;
+            CheckHr(writer.AddStream(outType, out var streamIndex), "AddStream(video)");
 
-                CheckHr(MFCreateMediaType(out inType), "MFCreateMediaType(videoIn)");
-                CheckHr(inType.SetGUID(in MfMtMajorType, in MfMediaTypeVideo), "SetGUID(MajorType)");
-                CheckHr(inType.SetGUID(in MfMtSubtype, in MfVideoFormatRgb32), "SetGUID(RGB32)");
-                CheckHr(inType.SetUINT32(in MfMtInterlaceMode, MfVideoInterlaceProgressive), "SetUINT32(Interlace)");
-                CheckHr(inType.SetUINT64(in MfMtFrameSize, packedSize), "SetUINT64(FrameSize)");
-                CheckHr(inType.SetUINT64(in MfMtFrameRate, packedRate), "SetUINT64(FrameRate)");
-                CheckHr(inType.SetUINT64(in MfMtPixelAspectRatio, packedPar), "SetUINT64(PAR)");
-                CheckHr(inType.SetUINT32(in MfMtDefaultStride, unchecked((uint)(width * 4))), "SetUINT32(DefaultStride)");
+            CheckHr(MFCreateMediaType(out inType), "MFCreateMediaType(videoIn)");
+            CheckHr(inType.SetGUID(in MfMtMajorType, in MfMediaTypeVideo), "SetGUID(MajorType)");
+            CheckHr(inType.SetGUID(in MfMtSubtype, in MfVideoFormatRgb32), "SetGUID(RGB32)");
+            CheckHr(inType.SetUINT32(in MfMtInterlaceMode, MfVideoInterlaceProgressive), "SetUINT32(Interlace)");
+            CheckHr(inType.SetUINT64(in MfMtFrameSize, packedSize), "SetUINT64(FrameSize)");
+            CheckHr(inType.SetUINT64(in MfMtFrameRate, packedRate), "SetUINT64(FrameRate)");
+            CheckHr(inType.SetUINT64(in MfMtPixelAspectRatio, packedPar), "SetUINT64(PAR)");
+            CheckHr(inType.SetUINT32(in MfMtDefaultStride, unchecked((uint)(width * 4))), "SetUINT32(DefaultStride)");
 
-                var hr = writer.SetInputMediaType(streamIndex, inType, null);
-                if (hr >= 0)
-                    return streamIndex;
-
-                lastError = Marshal.GetExceptionForHR(hr);
-            }
-            catch (Exception error)
-            {
-                lastError = error;
-            }
-            finally
-            {
-                ReleaseCom(inType);
-                ReleaseCom(outType);
-            }
+            CheckHr(writer.SetInputMediaType(streamIndex, inType, null), "SetInputMediaType(video)");
+            return streamIndex;
         }
-
-        throw new IOException("Não foi possível inicializar o codificador de vídeo do Windows para unir os segmentos.", lastError);
+        finally
+        {
+            ReleaseCom(inType);
+            ReleaseCom(outType);
+        }
     }
 
     private static uint? TryConfigureAudioStream(IMFSinkWriter writer)
@@ -304,19 +274,19 @@ internal static class VideoConcatenator
                 {
                     readAudio = true;
                 }
+                else throw new IOException($"Falha ao decodificar o áudio de {Path.GetFileName(inputPath)}.");
             }
 
             var (resolvedVideoIdx, resolvedAudioIdx) = ResolveSelectedStreamIndices(reader, wantAudio: readAudio);
             if (resolvedVideoIdx is not { } readerVideoIdx)
                 throw new IOException($"Nenhuma faixa de vídeo encontrada em '{Path.GetFileName(inputPath)}'.");
             if (readAudio && !resolvedAudioIdx.HasValue)
-                readAudio = false;
+                throw new IOException("Faixa de áudio selecionada não encontrada.");
 
             const int maxConsecutiveEmptyReads = 256;
             var consecutiveEmptyReads = 0;
             var expectedDurationHns = Math.Max(defaultFrameDurationHns, (long)Math.Round(probe.DurationSeconds * 10_000_000.0));
-            long? firstVideoTs = null;
-            long? firstAudioTs = null;
+            long? segmentOrigin = null;
             var maxVideoEndLocal = 0L;
             var frameCount = 0;
             var videoEof = false;
@@ -336,22 +306,12 @@ internal static class VideoConcatenator
                 if (hr < 0)
                 {
                     ReleaseCom(sample);
-                    if (readAudio && resolvedAudioIdx.HasValue && readTarget == resolvedAudioIdx.Value)
-                    {
-                        audioEof = true;
-                        continue;
-                    }
                     CheckHr(hr, "ReadSample");
                 }
 
                 if ((flags & MfSourceReaderFlagError) != 0)
                 {
                     ReleaseCom(sample);
-                    if (readAudio && resolvedAudioIdx.HasValue && actualIdx == resolvedAudioIdx.Value)
-                    {
-                        audioEof = true;
-                        continue;
-                    }
                     throw new IOException($"Erro ao ler vídeo de '{Path.GetFileName(inputPath)}'.");
                 }
 
@@ -361,13 +321,14 @@ internal static class VideoConcatenator
                     consecutiveEmptyReads = 0;
                     try
                     {
+                        segmentOrigin ??= ts;
                         if (actualIdx == readerVideoIdx)
                         {
                             var sampleDuration = sample.GetSampleDuration(out var rawDur) == 0 && rawDur > 0
                                 ? rawDur
                                 : defaultFrameDurationHns;
-                            firstVideoTs ??= ts;
-                            var localPts = Math.Max(0L, ts - firstVideoTs.Value);
+
+                            var localPts = Math.Max(0L, ts - segmentOrigin.Value);
                             var outPts = timelineOffsetHns + localPts;
                             if (outPts <= lastWrittenVideoPts)
                                 outPts = lastWrittenVideoPts + Math.Max(1L, defaultFrameDurationHns / 2);
@@ -394,8 +355,8 @@ internal static class VideoConcatenator
                         }
                         else if (isAudioSample && audioStreamIndex is { } audioIdx)
                         {
-                            firstAudioTs ??= ts;
-                            var localPts = Math.Max(0L, ts - firstAudioTs.Value);
+
+                            var localPts = Math.Max(0L, ts - segmentOrigin.Value);
                             var audioCapHns = videoEof && maxVideoEndLocal > 0
                                 ? maxVideoEndLocal
                                 : Math.Max(maxVideoEndLocal, expectedDurationHns) + defaultFrameDurationHns;
@@ -403,6 +364,8 @@ internal static class VideoConcatenator
                             if (localPts < audioCapHns)
                             {
                                 var outPts = Math.Max(lastWrittenAudioEnd, timelineOffsetHns + localPts);
+                                if (outPts > lastWrittenAudioEnd + 208)
+                                    WriteAudioSilence(writer, audioIdx, lastWrittenAudioEnd, outPts - lastWrittenAudioEnd, cancellationToken);
                                 var dur = sample.GetSampleDuration(out var rawDur) == 0 && rawDur > 0
                                     ? rawDur
                                     : EstimateAudioDuration(sample);
@@ -427,7 +390,7 @@ internal static class VideoConcatenator
                 {
                     consecutiveEmptyReads++;
                     if (consecutiveEmptyReads >= maxConsecutiveEmptyReads)
-                        break;
+                        throw new IOException("Leitura interrompida antes do final do segmento.");
                 }
 
                 if ((flags & MfSourceReaderFlagEndOfStream) != 0)
@@ -452,7 +415,8 @@ internal static class VideoConcatenator
                 ? maxVideoEndLocal
                 : expectedDurationHns;
 
-            return frameCount > 0 ? segmentDurationHns : Math.Max(defaultFrameDurationHns, segmentDurationHns);
+            if (frameCount == 0) throw new IOException($"Nenhum quadro em {Path.GetFileName(inputPath)}.");
+            return segmentDurationHns;
         }
         finally
         {
@@ -634,10 +598,4 @@ internal static class VideoConcatenator
 
     private static int AlignEven(int value) => value % 2 == 0 ? value : value + 1;
 
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
 }

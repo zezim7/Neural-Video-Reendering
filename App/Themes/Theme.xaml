@@ -26,7 +26,7 @@
     <!-- Text Hierarchy -->
     <SolidColorBrush x:Key="TextPrimary" Color="#F0F0F0"/>
     <SolidColorBrush x:Key="TextSecondary" Color="#9A9A9A"/>
-    <SolidColorBrush x:Key="TextMuted" Color="#666666"/>
+    <SolidColorBrush x:Key="TextMuted" Color="#969696"/>
 
     <!-- Monochrome Primary Action -->
     <SolidColorBrush x:Key="PrimaryFill" Color="#ECECEC"/>

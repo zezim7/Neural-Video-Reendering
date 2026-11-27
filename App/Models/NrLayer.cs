@@ -45,6 +45,15 @@ internal sealed class NrLayer : INotifyPropertyChanged
         new("amd-original", "AMD Original · RX 7000 / 9000", "AMD")
     ];
 
+    internal static int InitialModelIndex(string savedTag, IEnumerable<string> installedVendors)
+    {
+        var installed = installedVendors.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var saved = Array.FindIndex(Models, m => m.Tag == savedTag);
+        if (saved >= 0 && (installed.Count == 0 || installed.Contains(Models[saved].Vendor)))
+            return saved;
+        return Math.Max(0, Array.FindIndex(Models, m => installed.Contains(m.Vendor)));
+    }
+
     private int index = 1;
     private bool enabled = true;
     private bool expanded;
@@ -114,7 +123,6 @@ internal sealed class NrLayer : INotifyPropertyChanged
             if (Math.Abs(intensity - clamped) < 1e-6) return;
             intensity = clamped;
             Notify();
-            Notify(nameof(IntensityLabel));
             Notify(nameof(IntensityValue));
             Notify(nameof(Summary));
         }
@@ -129,7 +137,6 @@ internal sealed class NrLayer : INotifyPropertyChanged
             if (Math.Abs(tone - clamped) < 1e-6) return;
             tone = clamped;
             Notify();
-            Notify(nameof(ToneLabel));
             Notify(nameof(ToneValue));
         }
     }
@@ -143,7 +150,6 @@ internal sealed class NrLayer : INotifyPropertyChanged
             if (Math.Abs(structure - clamped) < 1e-6) return;
             structure = clamped;
             Notify();
-            Notify(nameof(StructureLabel));
             Notify(nameof(StructureValue));
         }
     }
@@ -162,9 +168,6 @@ internal sealed class NrLayer : INotifyPropertyChanged
     public string Title => $"Camada NR {Index}";
     public string Chevron => Expanded ? "▾" : "▸";
     public string Summary => $"{Resolutions[ResolutionIndex].Name} · {Intensity:F2}";
-    public string IntensityLabel => $"Intensidade {Intensity:F2}";
-    public string ToneLabel => $"Tom {Tone:F2}";
-    public string StructureLabel => $"Estrutura {Structure:F2}";
     public string IntensityValue => $"{Intensity:F2}";
     public string ToneValue => $"{Tone:F2}";
     public string StructureValue => $"{Structure:F2}";

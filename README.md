@@ -2,19 +2,29 @@
 
 **English** · [Português (BR)](README.pt-BR.md) · [简体中文](README.zh-CN.md)
 
-Offline neural video renderer, trimmer, and still-frame DLSS 5 processor for Windows 11 x64. Powered locally on GPU through the bundled Veyra rendering engine with no cloud dependencies.
+Video editor for Windows 11 x64. Arrange clips on up to six tracks, apply neural rendering on the GPU, and export MP4 files. Each portable package includes the Veyra engine for the selected GPU vendor.
 
-![Video NR main workspace](docs/screenshots/editor-main.png)
+![Two-track timeline with playhead and trim controls](docs/screenshots/editor-timeline.png)
 
-## Features
+## Editing and export
 
-- **Stacked Neural Rendering (up to 4 layers)** — configure internal processing resolution (`480p` to `1440p` or `Native`), **Intensity**, **Tone**, and **Structure** per layer, apply presets (`Sutil`, `Equilibrado`, `Máximo`), duplicate layers, or double-click any slider to reset to `1.00`.
-- **DLSS 5 / NR Print & Image Processing** — render a single video frame at the current playhead (`P`), capture a screen region/monitor (`Ctrl+Shift+P`), open an image (`PNG`, `JPG`, `BMP`, `WEBP`, `TIFF`), or paste from the clipboard (`Ctrl+V`). Includes an interactive before/after viewer with `100%` (1:1) drag-to-pan inspection, focal-point zoom toggle, clipboard copy, and PNG/JPG export.
-- **Frame-Accurate Trimming & Queue** — scrub along the time ruler, step frame-by-frame (`,` / `.`) using the clip's real detected frame rate (falling back to `30 fps` when unknown), drag trim handles, or enter `HH:MM:SS.mmm` bounds. Videos in the collapsible queue keep independent trim ranges and display live extracted thumbnails, resolution, and frame rate metadata.
-- **Batch MP4 Export (H.264 / HEVC)** — drag videos or folders onto the window and export sequentially while preserving source resolution, frame rate, and compatible audio tracks.
-- **Native Windows 11 Interface** — .NET 8 WPF darkroom UI with integrated `WindowChrome` title bar, `Segoe Fluent Icons`, Per-Monitor DPI v2 support, and automatic preference persistence.
+Drag clips from the library onto the timeline. The highest visible track with an enabled segment wins each overlap. Playback and sequence export skip gaps. Lock a track to protect its contents. Split at the playhead, drag an edge, or enter source times in `HH:MM:SS.mmm`.
 
-![DLSS 5 / NR before-and-after inspection](docs/screenshots/print-preview.png)
+| Mode in the editor | Output |
+| --- | --- |
+| Sequência | One MP4 of the visible edit. When joining segments, the first sets the frame size. Other aspect ratios are letterboxed. The first audio track of each part is joined as stereo AAC. |
+| Trechos | One MP4 per enabled segment on visible tracks, including covered segments. Each keeps its source trim and NR settings. |
+| Originais | One MP4 per full library file with the global NR profile. |
+
+The global profile supports four layers with individual resolution, intensity, tone and structure. Select a segment to override that profile. AMD neural processing is capped at 1080p internally, including the Native and 1440p options.
+
+## Video frames and stills
+
+Press `P` for the current frame, `Ctrl+Shift+P` for a screen region, or `Ctrl+V` to paste. You can also open a still image. Frame stepping uses the source presentation timestamps available through Windows and supports variable frame rates.
+
+**Sem NR** and **NR** use the same engine and output encoding for comparison. Still images enter as one uncompressed YUV frame, fitted within 4096 × 2304, with transparency composited over black. Inspect at 100%, copy the result, or save as PNG or JPEG.
+
+![Viewer controls illustrated with the same test chart on both sides](docs/screenshots/print-preview.png)
 
 ## Download & Quick Start
 
@@ -36,7 +46,7 @@ Offline neural video renderer, trimmer, and still-frame DLSS 5 processor for Win
 
 > [!NOTE]
 > AMD modes require the HIP runtime and are experimental in this editor.
-> The built-in preview uses system codecs installed on Windows; files that cannot preview in the player (e.g., MKV/HEVC without Windows codecs) can still be exported and single-frame printed through the GPU engine.
+> Preview and timestamp access depend on the codecs installed in Windows. Export uses the engine’s own decoder.
 
 ## Keyboard Shortcuts
 
@@ -45,25 +55,30 @@ Offline neural video renderer, trimmer, and still-frame DLSS 5 processor for Win
 | Shortcut | Action |
 | :--- | :--- |
 | `Space` or click video | Play / Pause |
-| `,` / `.` | Step −1 / +1 frame (uses detected clip FPS) |
+| `,` / `.` | Step back / forward by presentation timestamp |
 | `←` / `→` | Seek −1s / +1s |
 | `Shift` + `←` / `→` | Seek −5s / +5s |
 | `I` / `O` | Mark trim start / end at current position |
 | `M` | Mute / Unmute preview audio |
 | `Q` | Toggle queue drawer |
-| `P` | Render current video frame with DLSS 5 / NR |
-| `Ctrl` + `Shift` + `P` | Screen capture print with DLSS 5 / NR |
-| `Ctrl` + `V` | Paste clipboard image for DLSS 5 / NR |
+| `P` | Render current video frame with NR |
+| `Ctrl` + `Shift` + `P` | Screen capture print with NR |
+| `Ctrl` + `V` | Paste clipboard image for NR |
 | `Ctrl` + `O` | Open video files |
-| `Delete` | Remove selected clip from queue |
+| `C` / `S` | Split at the playhead |
+| `Ctrl+D` / `E` | Duplicate / enable or disable the selected segment |
+| `G` / `F` | Close gaps on unlocked tracks / fit timeline to view |
+| `Delete` | Remove the selected segment. With focus in the library, remove the library item. |
+| `Shift+Delete` | Remove the segment and close the gap on its track |
+| `Ctrl+Z` / `Ctrl+Y` or `Ctrl+Shift+Z` | Undo / redo |
 
-### Print Preview (`DLSS 5 / NR`)
+### Print Preview (`NR`)
 
 | Shortcut / Gesture | Action |
 | :--- | :--- |
 | `1` / `2` | Switch between Fit and `100%` (1:1) zoom |
 | Double-click or `Ctrl` + Wheel | Toggle Fit / `100%` centered on cursor |
-| Middle-drag, or Left-drag (`NR` / `Original` / `Space` held) | Pan image while zoomed to `100%` |
+| Middle-drag, or Left-drag (`NR` / `Sem NR` / `Space` held) | Pan image while zoomed to `100%` |
 | `←` / `→` (`Shift` + `←` / `→`) | Nudge split divider ±2% (±10%) in Compare mode |
 | `Ctrl` + `C` | Copy rendered image to clipboard |
 | `Ctrl` + `S` | Save rendered image as PNG |
@@ -81,6 +96,10 @@ Offline neural video renderer, trimmer, and still-frame DLSS 5 processor for Win
 ```powershell
 # Run unit tests
 dotnet run --project Tests/VideoNR.Tests.csproj
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
+
+# On a supported GPU, verify an extracted package and save the test chart, both renders, the trimmed MP4 and layer settings
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-package C:\VideoNR .\results
 
 # Build the editor (build/VideoNR.exe) and native adapter (build/Engine.exe)
 ./Build.ps1
@@ -90,6 +109,8 @@ dotnet run --project Tests/VideoNR.Tests.csproj
 python scripts/package-windows.py
 ```
 
+A manual GitHub Actions run builds and opens both portable ZIPs on Windows. Select the release option to publish them.
+
 ### Repository Structure
 
 ```text
@@ -97,13 +118,13 @@ python scripts/package-windows.py
 │   ├── Assets/                 # Multi-resolution application icon
 │   ├── Helpers/                # DWM dark mode and window chrome helpers
 │   ├── Imaging/                # GDI screen capture, WIC I/O, video thumbnails & FPS probing
-│   ├── Models/                 # ClipItem, NrLayer, TrimSelection
+│   ├── Models/                 # ClipItem, NrLayer, TimelineSequence, TimelineSegment, TimelineHistory
 │   ├── Services/               # EngineLocator, VideoExporter, PrintProcessor, MediaFoundationFrameCodec, MediaFoundationInterop, RawImage, SettingsStore
 │   ├── Themes/                 # Shared Fluent darkroom styles and tokens
 │   ├── Editor.xaml             # Main window layout
 │   ├── Editor.xaml.cs          # Window chrome, queue, presets, shortcuts
-│   ├── Editor.Playback.cs      # Player, time ruler, trim, scrubbing & real-FPS stepping
-│   ├── Editor.Export.cs        # Batch export and DLSS 5 print workflows
+│   ├── Editor.Playback.cs      # Player, time ruler, trim, scrubbing & presentation-timestamp stepping
+│   ├── Editor.Export.cs        # Batch export and NR print workflows
 │   ├── PrintPreviewWindow.*    # Interactive before/after & 1:1 pan/zoom inspection modal
 │   └── ScreenCaptureOverlay.*  # Multi-monitor region capture overlay
 ├── Engine.cpp                  # Native C++20 shared-memory adapter (supports --max-frames)

@@ -2,19 +2,29 @@
 
 [English](README.md) · **Português (BR)** · [简体中文](README.zh-CN.md)
 
-Editor, cortador e processador neural de vídeo e imagens (DLSS 5 / NR) 100% offline para Windows 11 x64. Executa localmente na GPU usando o motor Veyra incluído nos pacotes portáteis, sem nuvem e sem dependências externas.
+Editor de vídeo para Windows 11 x64. Monte a sequência em até seis faixas, aplique NR na GPU e exporte para MP4. Cada pacote portátil inclui o motor Veyra do fabricante escolhido.
 
-![Janela principal do Video NR](docs/screenshots/editor-main.png)
+![Timeline com duas faixas, agulha de reprodução e controles de corte](docs/screenshots/editor-timeline.png)
 
-## Recursos
+## Montagem e exportação
 
-- **Renderização Neural em camadas (até 4 passes)** — configure resolução interna (`480p` a `1440p` ou `Nativa`), **Intensidade**, **Tom** e **Estrutura** por camada, aplique predefinições (`Sutil`, `Equilibrado`, `Máximo`), duplique camadas ou dê duplo-clique em qualquer slider para restaurar `1.00`.
-- **Print e Imagens com DLSS 5 / NR** — renderize um único frame no ponto atual do vídeo (`P`), capture uma região ou monitor da tela (`Ctrl+Shift+P`), abra imagens (`PNG`, `JPG`, `BMP`, `WEBP`, `TIFF`) ou cole da área de transferência (`Ctrl+V`). Inclui janela interativa de comparação antes/depois com zoom `100%` (1:1), arrasto para mover (pan), alternância de zoom no ponto do cursor, cópia para a área de transferência e salvamento em PNG/JPG.
-- **Corte preciso e fila com miniaturas** — navegue pela régua de tempo, avance frame a frame (`,` / `.`) usando o FPS real detectado do clipe (com fallback para `30 fps`), arraste as alças de corte ou digite limites em `HH:MM:SS.mmm`. A fila lateral exibe miniaturas reais, resolução e FPS detectados de cada clipe e guarda cortes independentes por vídeo.
-- **Exportação em lote para MP4 (H.264 / HEVC)** — arraste vídeos ou pastas para a janela e exporte tudo em sequência preservando resolução, FPS e faixas de áudio compatíveis.
-- **Interface nativa Windows 11** — UI .NET 8 WPF com barra de título integrada (`WindowChrome`), ícones `Segoe Fluent Icons`, suporte a DPI Per-Monitor v2 e salvamento automático das preferências.
+Arraste vídeos da biblioteca para as faixas. O trecho ativo da faixa visível mais alta aparece na sequência. Os espaços entre trechos são omitidos na reprodução e na exportação. O cadeado protege o conteúdo da faixa. Use a tesoura na agulha para dividir, arraste as bordas para aparar ou informe os tempos de origem em `HH:MM:SS.mmm`.
 
-![Comparação antes e depois em DLSS 5 / NR](docs/screenshots/print-preview.png)
+| Modo | Resultado |
+| --- | --- |
+| Sequência | Um MP4 com a montagem visível. Na junção, o primeiro trecho define o tamanho da imagem. Trechos de outro formato recebem barras para preservar a proporção. A primeira faixa de áudio de cada parte é combinada em AAC estéreo. |
+| Trechos | Um MP4 por segmento ativo de faixa visível, inclusive quando outro segmento o cobre. Preserva os cortes e o NR do segmento. |
+| Originais | Um MP4 por arquivo inteiro da biblioteca com o perfil NR global. |
+
+O perfil global aceita até quatro camadas, cada uma com resolução interna, intensidade, tom e estrutura. Selecione um trecho e ative seu perfil próprio para ajustar apenas aquele segmento. No pacote AMD, a resolução interna chega a 1080p, inclusive nas opções Nativa e 1440p. Esse limite se refere ao processamento neural.
+
+## Print de vídeo ou imagem
+
+Use `P` para o quadro atual, `Ctrl+Shift+P` para uma região da tela ou `Ctrl+V` para a área de transferência. Também é possível abrir uma imagem. A navegação quadro a quadro usa os timestamps de apresentação disponíveis no Windows, inclusive em vídeos de taxa variável.
+
+Na comparação, **Sem NR** e **NR** passam pelo mesmo motor e pela mesma codificação de saída. A entrada estática usa um quadro YUV sem compressão, limitado a 4096 × 2304 e com transparência composta sobre preto. O comparador permite inspeção a 100%, cópia e salvamento em PNG ou JPEG.
+
+![Comparador a exibir o mesmo padrão de teste nos dois lados para ilustrar os controles](docs/screenshots/print-preview.png)
 
 ## Download e uso rápido
 
@@ -36,7 +46,7 @@ Editor, cortador e processador neural de vídeo e imagens (DLSS 5 / NR) 100% off
 
 > [!NOTE]
 > Os modos AMD exigem o runtime HIP instalado e estão em fase experimental neste editor.
-> O preview utiliza os codecs instalados no Windows; arquivos sem codec de preview no sistema (ex: MKV/HEVC) ainda podem ser exportados e processados em print normalmente pelo motor.
+> A prévia e a leitura dos tempos dependem dos codecs instalados no Windows. O motor usa seu próprio decodificador na exportação.
 
 ## Atalhos de teclado
 
@@ -45,25 +55,30 @@ Editor, cortador e processador neural de vídeo e imagens (DLSS 5 / NR) 100% off
 | Atalho | Ação |
 | :--- | :--- |
 | `Espaço` ou clique no vídeo | Reproduzir / Pausar |
-| `,` / `.` | Voltar / Avançar 1 frame (usa o FPS real do clipe) |
+| `,` / `.` | Quadro anterior / seguinte pelo timestamp de apresentação |
 | `←` / `→` | Voltar / Avançar 1 segundo |
 | `Shift` + `←` / `→` | Voltar / Avançar 5 segundos |
 | `I` / `O` | Marcar início / fim do corte no ponto atual |
 | `M` | Silenciar / Ativar áudio do preview |
 | `Q` | Mostrar / Ocultar fila lateral |
-| `P` | Renderizar frame atual do vídeo com DLSS 5 / NR |
-| `Ctrl` + `Shift` + `P` | Capturar tela e aplicar DLSS 5 / NR |
-| `Ctrl` + `V` | Colar imagem da área de transferência para DLSS 5 / NR |
+| `P` | Renderizar frame atual do vídeo com NR |
+| `Ctrl` + `Shift` + `P` | Capturar tela e aplicar NR |
+| `Ctrl` + `V` | Colar imagem da área de transferência para NR |
 | `Ctrl` + `O` | Abrir vídeos |
-| `Delete` | Remover o vídeo selecionado da fila |
+| `C` / `S` | Cortar na agulha |
+| `Ctrl+D` / `E` | Duplicar / ativar ou desativar o trecho selecionado |
+| `G` / `F` | Fechar espaços nas faixas desbloqueadas / ajustar o zoom da timeline |
+| `Delete` | Remover o trecho selecionado. Com foco na biblioteca, remover o arquivo da biblioteca. |
+| `Shift+Delete` | Remover o trecho selecionado e fechar o espaço na faixa |
+| `Ctrl+Z` / `Ctrl+Y` ou `Ctrl+Shift+Z` | Desfazer / refazer |
 
-### Visualização de Print (`DLSS 5 / NR`)
+### Visualização de Print (`NR`)
 
 | Atalho / Gesto | Ação |
 | :--- | :--- |
 | `1` / `2` | Alternar entre Ajustar e `100%` (1:1) |
 | Duplo-clique ou `Ctrl` + Roda | Alternar Ajustar / `100%` focado no cursor |
-| Botão do meio, ou arrastar (`NR` / `Original` / segurando `Espaço`) | Mover imagem (pan) no zoom `100%` |
+| Botão do meio, ou arrastar (`NR` / `Sem NR` / segurando `Espaço`) | Mover imagem (pan) no zoom `100%` |
 | `←` / `→` (`Shift` + `←` / `→`) | Ajustar divisória ±2% (±10%) no modo Comparar |
 | `Ctrl` + `C` | Copiar imagem renderizada para a área de transferência |
 | `Ctrl` + `S` | Salvar imagem renderizada em PNG |
@@ -81,6 +96,10 @@ Editor, cortador e processador neural de vídeo e imagens (DLSS 5 / NR) 100% off
 ```powershell
 # Executar testes unitários
 dotnet run --project Tests/VideoNR.Tests.csproj
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
+
+# Em uma GPU compatível, verificar um pacote extraído e salvar o padrão de teste, as duas imagens, o MP4 cortado e os parâmetros
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-package C:\VideoNR .\results
 
 # Compilar o editor (build/VideoNR.exe) e o adaptador nativo (build/Engine.exe)
 ./Build.ps1
@@ -90,6 +109,8 @@ dotnet run --project Tests/VideoNR.Tests.csproj
 python scripts/package-windows.py
 ```
 
+Em GitHub Actions, uma execução manual monta e abre os dois ZIPs no Windows. A publicação de uma release requer marcar a opção correspondente.
+
 ### Estrutura do repositório
 
 ```text
@@ -97,13 +118,13 @@ python scripts/package-windows.py
 │   ├── Assets/                 # Ícone multi-resolução da aplicação
 │   ├── Helpers/                # Integração DWM dark mode e WindowChrome
 │   ├── Imaging/                # Captura de tela GDI, leitura/escrita WIC, miniaturas e leitura de FPS
-│   ├── Models/                 # ClipItem, NrLayer, TrimSelection
+│   ├── Models/                 # ClipItem, NrLayer, TimelineSequence, TimelineSegment, TimelineHistory
 │   ├── Services/               # EngineLocator, VideoExporter, PrintProcessor, MediaFoundationFrameCodec, MediaFoundationInterop, RawImage, SettingsStore
 │   ├── Themes/                 # Sistema visual compartilhado (Theme.xaml)
 │   ├── Editor.xaml             # Layout principal
 │   ├── Editor.xaml.cs          # Barra de título, fila, predefinições e atalhos
-│   ├── Editor.Playback.cs      # Player, régua de tempo, corte, scrub e passo por FPS real
-│   ├── Editor.Export.cs        # Exportação em lote e fluxo de Print DLSS 5
+│   ├── Editor.Playback.cs      # Player, régua de tempo, corte, scrub e passo por timestamp
+│   ├── Editor.Export.cs        # Exportação em lote e fluxo de Print NR
 │   ├── PrintPreviewWindow.*    # Comparador antes/depois e inspeção 1:1 com pan/zoom
 │   └── ScreenCaptureOverlay.*  # Overlay multi-monitor para captura de tela
 ├── Engine.cpp                  # Adaptador nativo C++20 (suporta --max-frames)

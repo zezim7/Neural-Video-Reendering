@@ -106,7 +106,7 @@ internal sealed class TimelineSequence
     {
         if (tracks.Count <= 2) return false;
         var topIdx = tracks.Count - 1;
-        if (segments.Any(s => s.TrackIndex == topIdx)) return false;
+        if (IsTrackLocked(topIdx) || segments.Any(s => s.TrackIndex == topIdx)) return false;
         tracks.RemoveAt(topIdx);
         return true;
     }
@@ -137,7 +137,7 @@ internal sealed class TimelineSequence
         return maxEnd;
     }
 
-    public TimelineSegment AppendClip(
+    public TimelineSegment? AppendClip(
         string sourcePath,
         double sourceDuration,
         TrimSelection? initialTrim = null,
@@ -150,7 +150,7 @@ internal sealed class TimelineSequence
         return AddClipAt(sourcePath, sourceDuration, startTime, clampedTrack, initialTrim, colorIndex);
     }
 
-    public TimelineSegment AddClipAt(
+    public TimelineSegment? AddClipAt(
         string sourcePath,
         double sourceDuration,
         double timelineStart,
@@ -159,7 +159,7 @@ internal sealed class TimelineSequence
         int colorIndex = 0)
     {
         var clampedTrack = Math.Clamp(trackIndex, 0, MaxTracks - 1);
-        EnsureTrack(clampedTrack);
+        if (EnsureTrack(clampedTrack).Locked) return null;
 
         var srcStart = initialTrim is { } t ? t.Start : 0;
         var srcEnd = initialTrim is { } t2 && sourceDuration > 0 ? t2.EndAt(sourceDuration) : sourceDuration;
@@ -221,7 +221,7 @@ internal sealed class TimelineSequence
         var uniqueCuts = new List<double>(cuts.Count);
         for (var i = 0; i < cuts.Count; i++)
         {
-            if (uniqueCuts.Count == 0 || cuts[i] - uniqueCuts[^1] > 1e-5)
+            if (uniqueCuts.Count == 0 || cuts[i] > uniqueCuts[^1])
                 uniqueCuts.Add(cuts[i]);
         }
 
@@ -230,7 +230,7 @@ internal sealed class TimelineSequence
         {
             var t0 = uniqueCuts[i];
             var t1 = uniqueCuts[i + 1];
-            if (t1 - t0 < 1e-4) continue;
+            if (TimeSpan.FromSeconds(t1).Ticks == TimeSpan.FromSeconds(t0).Ticks) continue;
             var mid = (t0 + t1) * 0.5;
 
             TimelineSegment? winner = null;
@@ -251,7 +251,7 @@ internal sealed class TimelineSequence
 
             if (result.Count > 0
                 && result[^1].Segment.Id == winner.Id
-                && Math.Abs(result[^1].TimelineEnd - t0) < 1e-4
+                && result[^1].TimelineEnd == t0
                 && Math.Abs(result[^1].SourceEnd - srcStart) < 1e-4)
             {
                 var prev = result[^1];
@@ -266,6 +266,12 @@ internal sealed class TimelineSequence
         return result;
     }
 
+    public List<CompositionSlice> SnapshotComposition() =>
+        ResolveComposition().Select(s => s with { Segment = s.Segment.Clone(preserveId: true) }).ToList();
+
+    public IEnumerable<TimelineSegment> EditedSegments() =>
+        segments.Where(IsSegmentActive).OrderBy(s => s.TimelineStart).ThenBy(s => s.TrackIndex);
+
     public CompositionSlice? LocateCompositionAt(double timelineSeconds)
     {
         var slices = ResolveComposition();
@@ -273,7 +279,7 @@ internal sealed class TimelineSequence
         for (var i = 0; i < slices.Count; i++)
         {
             var s = slices[i];
-            if (timelineSeconds >= s.TimelineStart - 1e-4 && timelineSeconds < s.TimelineEnd - 1e-5)
+            if (timelineSeconds >= s.TimelineStart && timelineSeconds < s.TimelineEnd)
                 return s;
         }
 
@@ -543,8 +549,11 @@ internal sealed class TimelineSequence
         return moved;
     }
 
+    public bool UsesLockedTrack(string path) => segments.Any(s => IsTrackLocked(s.TrackIndex)
+        && s.SourcePath.Equals(path, StringComparison.OrdinalIgnoreCase));
+
     public int RemoveBySourcePath(string sourcePath) =>
-        segments.RemoveAll(s => s.SourcePath.Equals(sourcePath, StringComparison.OrdinalIgnoreCase));
+        UsesLockedTrack(sourcePath) ? 0 : segments.RemoveAll(s => s.SourcePath.Equals(sourcePath, StringComparison.OrdinalIgnoreCase));
 
     public void UpdateSourceDuration(string sourcePath, double duration)
     {
@@ -575,12 +584,14 @@ internal sealed class TimelineSequence
         }
     }
 
-    public void Clear()
+    public bool TryClear()
     {
+        if (tracks.Any(t => t.Locked)) return false;
         segments.Clear();
         tracks.Clear();
         tracks.Add(new TimelineTrackInfo(0));
         tracks.Add(new TimelineTrackInfo(1));
+        return true;
     }
 
     public TimelineStateSnapshot CaptureSnapshot() =>
