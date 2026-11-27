@@ -1192,7 +1192,6 @@ public partial class Editor : Window
         {
             SavePreferences();
             lifetimeCts.Cancel();
-            indexingCancellation?.Dispose();
             lifetimeCts.Dispose();
             clock.Stop();
             Player.Close();

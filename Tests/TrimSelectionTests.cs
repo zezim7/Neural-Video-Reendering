@@ -754,6 +754,55 @@ try
     File.WriteAllText(settingsFile, "{ invalid json");
     var fallback = SettingsStore.Load(settingsFile);
     AssertEqual(true, fallback.NrEnabled, "SettingsStore corrupt JSON falls back to defaults");
+
+    // --- FrameTimesCache ---
+    var clipA = Path.Combine(tempDir, "clip-a.mp4");
+    var clipB = Path.Combine(tempDir, "clip-b.mp4");
+    var clipC = Path.Combine(tempDir, "clip-c.mp4");
+    File.WriteAllText(clipA, "aaa");
+    File.WriteAllText(clipB, "bbb");
+    File.WriteAllText(clipC, "ccc");
+
+    var readCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    var failOnce = true;
+    var cache = new FrameTimesCache((path, _) =>
+    {
+        readCounts[path] = readCounts.GetValueOrDefault(path) + 1;
+        if (path == clipC && failOnce)
+        {
+            failOnce = false;
+            throw new IOException("transient read error");
+        }
+        return new FrameTimes([0, 333_333, 666_667]);
+    }, maxEntries: 2);
+
+    _ = cache.GetOrReadAsync(clipA, CancellationToken.None).GetAwaiter().GetResult();
+    _ = cache.GetOrReadAsync(clipB, CancellationToken.None).GetAwaiter().GetResult();
+    _ = cache.GetOrReadAsync(clipA, CancellationToken.None).GetAwaiter().GetResult();
+    AssertEqual(1, readCounts[clipA], "FrameTimesCache hits across clip switch without reindexing A");
+    AssertEqual(1, readCounts[clipB], "FrameTimesCache keeps clip B cached");
+
+    // Modifying file invalidates its cache entry.
+    File.WriteAllText(clipA, "aaaa-updated");
+    _ = cache.GetOrReadAsync(clipA, CancellationToken.None).GetAwaiter().GetResult();
+    AssertEqual(2, readCounts[clipA], "FrameTimesCache invalidates entry when file changes");
+
+    // Faulted read is not stuck in cache and retries on next call (also evicts LRU clipB since capacity=2).
+    try { _ = cache.GetOrReadAsync(clipC, CancellationToken.None).GetAwaiter().GetResult(); AssertTrue(false, "FrameTimesCache propagates failure"); }
+    catch (IOException) { }
+    _ = cache.GetOrReadAsync(clipC, CancellationToken.None).GetAwaiter().GetResult();
+    AssertEqual(2, readCounts[clipC], "FrameTimesCache retries after faulted task");
+    _ = cache.GetOrReadAsync(clipB, CancellationToken.None).GetAwaiter().GetResult();
+    AssertEqual(2, readCounts[clipB], "FrameTimesCache evicts least-recently-used entry when over capacity");
+
+    // --- PrintProcessor.CropIfOversized ---
+    var alignedFrame = MakeSolid(192, 128, 12, 34, 56);
+    var croppedAligned = PrintProcessor.CropIfOversized(alignedFrame, 192, 120);
+    AssertEqual(192, croppedAligned.Width, "CropIfOversized preserves width");
+    AssertEqual(120, croppedAligned.Height, "CropIfOversized crops macroblock-aligned height");
+    var exactFrame = MakeSolid(192, 120, 12, 34, 56);
+    AssertTrue(ReferenceEquals(exactFrame, PrintProcessor.CropIfOversized(exactFrame, 192, 120)),
+        "CropIfOversized returns same instance when dimensions already match");
 }
 finally
 {

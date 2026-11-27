@@ -174,25 +174,11 @@ public partial class Editor
     private void StepBackFrameClick(object sender, RoutedEventArgs e) => StepFrame(-1);
     private void StepForwardFrameClick(object sender, RoutedEventArgs e) => StepFrame(1);
 
-    private string? indexedPath;
-    private Task<FrameTimes>? frameTimesTask;
-    private CancellationTokenSource? indexingCancellation;
+    private readonly FrameTimesCache frameTimesCache = new(MediaFoundationFrameCodec.ReadFrameTimes, maxEntries: 8);
     private bool stepping;
 
-    private Task<FrameTimes> GetFrameTimesAsync(string path)
-    {
-        if (frameTimesTask is null || frameTimesTask.IsFaulted || frameTimesTask.IsCanceled
-            || !string.Equals(indexedPath, path, StringComparison.OrdinalIgnoreCase))
-        {
-            indexingCancellation?.Cancel();
-            indexingCancellation?.Dispose();
-            indexingCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetimeCts.Token);
-            var token = indexingCancellation.Token;
-            indexedPath = path;
-            frameTimesTask = Task.Run(() => MediaFoundationFrameCodec.ReadFrameTimes(path, token), token);
-        }
-        return frameTimesTask;
-    }
+    private Task<FrameTimes> GetFrameTimesAsync(string path) =>
+        frameTimesCache.GetOrReadAsync(path, lifetimeCts.Token);
 
     private async void StepFrame(int direction)
     {
@@ -202,6 +188,8 @@ public partial class Editor
         var slices = sequence.ResolveComposition();
         if (direction < 0) slices.Reverse();
         stepping = true;
+        var priorStatus = Status.Text;
+        const string indexingMessage = "Indexando quadros do vídeo…";
         try
         {
             foreach (var s in slices)
@@ -211,7 +199,10 @@ public partial class Editor
                 var next = s.TimelineStart;
                 if (direction < 0 || position >= s.TimelineStart)
                 {
-                    var frames = await GetFrameTimesAsync(s.Segment.SourcePath);
+                    var task = GetFrameTimesAsync(s.Segment.SourcePath);
+                    if (!task.IsCompleted)
+                        Status.Text = indexingMessage;
+                    var frames = await task;
                     var offset = Math.Clamp(position - s.TimelineStart, 0, s.Duration);
                     var source = offset >= s.Duration ? s.SourceEnd : s.SourceStart + offset;
                     var pts = frames.Adjacent(source, direction);
@@ -223,8 +214,14 @@ public partial class Editor
                     SeekTimeline(next, autoPlay: false);
                 break;
             }
+            if (Status.Text == indexingMessage)
+                Status.Text = priorStatus;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (Status.Text == indexingMessage)
+                Status.Text = priorStatus;
+        }
         catch (Exception error) when (error is IOException or COMException or UnauthorizedAccessException or InvalidOperationException)
         {
             Status.Text = $"Não foi possível localizar o quadro: {error.Message}";

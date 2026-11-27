@@ -180,6 +180,12 @@ internal static class VideoConcatenator
             CheckHr(writer.SetInputMediaType(streamIndex, inType, null), "SetInputMediaType(video)");
             return streamIndex;
         }
+        catch (IOException error) when (preferHevc)
+        {
+            throw new IOException(
+                "O codificador HEVC do Windows não está disponível para juntar a sequência. Instale as Extensões de Vídeo HEVC na Microsoft Store ou selecione H.264.",
+                error);
+        }
         finally
         {
             ReleaseCom(inType);

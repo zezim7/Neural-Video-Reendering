@@ -93,15 +93,23 @@ internal static class PrintProcessor
                 MaxFrames: 1);
 
             var result = await RenderComparisonAsync(exporter, request, onProgress, cancellationToken);
-            if (!wasPadded) return result with { WasDownscaled = wasDownscaled };
-            return new PrintResult(result.Enhanced.Crop(working.Width, working.Height),
-                result.Original?.Crop(working.Width, working.Height), wasDownscaled);
+            return new PrintResult(
+                CropIfOversized(result.Enhanced, working.Width, working.Height),
+                result.Original is { } original ? CropIfOversized(original, working.Width, working.Height) : null,
+                wasDownscaled);
         }
         finally
         {
             TryDeleteDirectory(tempDir);
         }
     }
+
+    internal static RawImage CropIfOversized(RawImage image, int targetWidth, int targetHeight) =>
+        (image.Width != targetWidth || image.Height != targetHeight)
+        && image.Width >= targetWidth
+        && image.Height >= targetHeight
+            ? image.Crop(targetWidth, targetHeight)
+            : image;
 
     private static async Task<PrintResult> RenderComparisonAsync(
         VideoExporter exporter, ExportRequest request, Action<int> progress, CancellationToken token)
