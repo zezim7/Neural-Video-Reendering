@@ -21,7 +21,27 @@ permissions:
   contents: write
 
 jobs:
+  prepare-vfr-fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gerar a amostra com timestamps independentes
+        run: |
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg; fi
+          python3 Tests/Fixtures/make-vfr.py
+          ffprobe -v error -select_streams v -show_entries frame=pts_time -of csv=p=0 Tests/Fixtures/variable-rate.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vfr-fixture
+          path: Tests/Fixtures/variable-rate.mp4
+      - name: Registrar amostra de regressão
+        if: github.head_ref == 'fix/timeline-export-fidelity' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base64 -w0 Tests/Fixtures/variable-rate.mp4 | jq -Rs '{encoding:"base64",content:.}' | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha
   build-and-release:
+    needs: prepare-vfr-fixture
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -32,6 +52,10 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: vfr-fixture
+          path: Tests/Fixtures
       - name: Executar testes unitários
         run: dotnet run --project Tests/VideoNR.Tests.csproj
       - name: Verificar as janelas e capturar a interface

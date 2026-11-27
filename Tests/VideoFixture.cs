@@ -6,10 +6,6 @@ using static VideoNR.Services.MediaFoundationInterop;
 internal static class VideoFixture
 {
     internal static void EncodeStillVideo(RawImage image, string outputMp4Path, int frameCount = 2, int fps = 30)
-        => EncodeFrames(image, outputMp4Path, frameCount, fps);
-
-    internal static void EncodeFrames(RawImage image, string outputMp4Path, int frameCount, int fps,
-        Func<int, RawImage>? frameAt = null, long[]? timestamps = null)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Media Foundation está disponível apenas no Windows.");
@@ -79,17 +75,15 @@ internal static class VideoFixture
                     CheckHr(MFCreateMemoryBuffer(frameBytes, out buffer), "MFCreateMemoryBuffer");
                     CheckHr(buffer.Lock(out var dstPtr, out _, out _), "buffer.Lock");
                     locked = true;
-                    Marshal.Copy((frameAt?.Invoke(i) ?? image).Bgra, 0, dstPtr, (int)frameBytes);
+                    Marshal.Copy(image.Bgra, 0, dstPtr, (int)frameBytes);
                     CheckHr(buffer.Unlock(), "buffer.Unlock");
                     locked = false;
                     CheckHr(buffer.SetCurrentLength(frameBytes), "buffer.SetCurrentLength");
 
                     CheckHr(MFCreateSample(out sample), "MFCreateSample");
                     CheckHr(sample.AddBuffer(buffer), "sample.AddBuffer");
-                    var pts = timestamps?[i] ?? i * frameDurationHns;
-                    var duration = timestamps is not null && i + 1 < frameCount ? timestamps[i + 1] - pts : frameDurationHns;
-                    CheckHr(sample.SetSampleTime(pts), "sample.SetSampleTime");
-                    CheckHr(sample.SetSampleDuration(duration), "sample.SetSampleDuration");
+                    CheckHr(sample.SetSampleTime(i * frameDurationHns), "sample.SetSampleTime");
+                    CheckHr(sample.SetSampleDuration(frameDurationHns), "sample.SetSampleDuration");
                     CheckHr(writer.WriteSample(streamIndex, sample), "writer.WriteSample");
                 }
                 finally

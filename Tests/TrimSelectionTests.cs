@@ -377,11 +377,7 @@ try
         AssertPixelNear(mergedStartFrame, 80, 60, 0, 0, 230, "VideoConcatenator first half red");
         AssertPixelNear(mergedEndFrame, 80, 60, 230, 0, 0, "VideoConcatenator second half blue (letterboxed)");
 
-        var variableRate = Path.Combine(tempDir, "variable-rate.mp4");
-        long[] numberedPts = [0, 166667, 583333, 750000, 1250000];
-        var numbered = Enumerable.Range(0, numberedPts.Length)
-            .Select(i => MakeSolid(160, 120, (byte)(i * 50), (byte)(i * 50), (byte)(i * 50))).ToArray();
-        VideoFixture.EncodeFrames(numbered[0], variableRate, numbered.Length, 60, i => numbered[i], numberedPts);
+        var variableRate = Path.Combine(AppContext.BaseDirectory, "Fixtures", "variable-rate.mp4");
         var actualFrames = MediaFoundationFrameCodec.ReadFrameTimes(variableRate, CancellationToken.None);
         var lastPts = actualFrames.AtOrBefore(1);
         AssertNear(0.125, lastPts, "Variable-rate final timestamp", .001);
