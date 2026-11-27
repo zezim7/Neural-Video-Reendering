@@ -372,7 +372,7 @@ public partial class PrintPreviewWindow : Window
         try
         {
             Clipboard.SetImage(enhancedBitmap);
-            PreviewStatus.Text = "Imagem DLSS 5 / NR copiada para a área de transferência.";
+            PreviewStatus.Text = "Imagem NR copiada para a área de transferência.";
         }
         catch (ExternalException)
         {

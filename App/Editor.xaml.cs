@@ -93,7 +93,8 @@ public partial class Editor : Window
         if (saved.CodecIndex == 1) HevcRadio.IsChecked = true;
         else H264Radio.IsChecked = true;
 
-        if (saved.ExportModeIndex == 1) BatchExportRadio.IsChecked = true;
+        if (saved.ExportModeIndex == 2) EditedExportRadio.IsChecked = true;
+        else if (saved.ExportModeIndex == 1) BatchExportRadio.IsChecked = true;
         else SequenceExportRadio.IsChecked = true;
 
         if (saved.QueueWidth >= 180 && saved.QueueWidth <= 480)
@@ -126,13 +127,7 @@ public partial class Editor : Window
             }
         }
 
-        var savedModelIndex = Array.FindIndex(NrLayer.Models, m => m.Tag == saved.ModelTag);
-        if (savedModelIndex >= 0)
-            NrVersion.SelectedIndex = savedModelIndex;
-        else if (!engines.ContainsKey("NVIDIA") && engines.ContainsKey("AMD"))
-            NrVersion.SelectedIndex = Array.FindIndex(NrLayer.Models, m => m.Vendor == "AMD");
-        else
-            NrVersion.SelectedIndex = 0;
+        NrVersion.SelectedIndex = NrLayer.InitialModelIndex(saved.ModelTag, engines.Keys);
 
         RebuildCustomPresetsUi();
         SyncZoomSlider();
@@ -153,7 +148,7 @@ public partial class Editor : Window
     private string? EnginePath => engines.GetValueOrDefault(Vendor);
     private int ActiveCount => NrSwitch.IsChecked == true ? layers.Count(l => l.Enabled) : 0;
     private bool CancelRequested => exportCancellation?.IsCancellationRequested == true;
-    private bool IsBatchExportMode => BatchExportRadio.IsChecked == true;
+    private bool IsBatchExportMode => SequenceExportRadio.IsChecked != true;
     private TimelineSegment? SelectedSegment => selectedSegmentId is { } id ? sequence.FindById(id) : null;
 
     private int GetColorIndexForSource(string path)
@@ -263,7 +258,6 @@ public partial class Editor : Window
 
     private static List<NrLayer> ToNrLayersFromSaved(List<SavedLayer> saved)
     {
-        if (saved.Count == 0) return [new NrLayer()];
         return saved.Take(LayerLimit).Select(s => new NrLayer
         {
             Enabled = s.Enabled,
@@ -304,7 +298,7 @@ public partial class Editor : Window
 
     private void ToggleSegmentOverrideClick(object sender, RoutedEventArgs e)
     {
-        if (busy || SelectedSegment is not { } seg) return;
+        if (busy || SelectedSegment is not { } seg || sequence.IsTrackLocked(seg.TrackIndex)) return;
         history.PushUndo(sequence, selectedSegmentId);
         seg.UseCustomNr = SegmentOverrideSwitch.IsChecked == true;
         if (seg.UseCustomNr && seg.CustomNr is null)
@@ -358,26 +352,26 @@ public partial class Editor : Window
         Queue.IsEnabled = !busy;
         TopOpenButton.IsEnabled = AddButton.IsEnabled = EmptyOpenButton.IsEnabled = EngineButton.IsEnabled
             = NrVersion.IsEnabled = H264Radio.IsEnabled = HevcRadio.IsEnabled
-            = SequenceExportRadio.IsEnabled = BatchExportRadio.IsEnabled
+            = SequenceExportRadio.IsEnabled = EditedExportRadio.IsEnabled = BatchExportRadio.IsEnabled
             = GlobalScopeRadio.IsEnabled = !busy;
 
         var seg = SelectedSegment;
         var segLocked = seg is not null && sequence.IsTrackLocked(seg.TrackIndex);
         SegmentScopeRadio.IsEnabled = !busy && sequence.Count > 0;
-        SegmentOverrideSwitch.IsEnabled = !busy && seg is not null;
+        SegmentOverrideSwitch.IsEnabled = !busy && seg is not null && !segLocked;
 
-        var nrControlsEditable = !busy && (!editingSegmentScope || (seg is not null && seg.UseCustomNr));
+        var nrControlsEditable = !busy && (!editingSegmentScope || (seg is not null && !segLocked && seg.UseCustomNr));
         NrSwitch.IsEnabled = nrControlsEditable;
         LayerCards.IsEnabled = nrControlsEditable;
-        PresetsGrid.IsEnabled = nrControlsEditable;
-        SavePresetButton.IsEnabled = nrControlsEditable;
+        PresetsGrid.IsEnabled = nrControlsEditable && ActiveCount > 0;
+        SavePresetButton.IsEnabled = PresetsGrid.IsEnabled;
         CustomPresetsPanel.IsEnabled = nrControlsEditable;
         AddLayerButton.IsEnabled = nrControlsEditable && layers.Count < LayerLimit;
         LayerCards.Opacity = nrControlsEditable || busy ? 1.0 : 0.45;
 
-        AddToTimelineButton.IsEnabled = !busy && clip is not null;
-        RemoveButton.IsEnabled = !busy && clip is not null;
-        ClearButton.IsEnabled = !busy && (clips.Count > 0 || sequence.Count > 0);
+        AddToTimelineButton.IsEnabled = !busy && clip is not null && !sequence.IsTrackLocked(activeTrackIndex);
+        RemoveButton.IsEnabled = !busy && clip is not null && !sequence.UsesLockedTrack(clip.Path);
+        ClearButton.IsEnabled = !busy && !sequence.Tracks.Any(t => t.Locked) && (clips.Count > 0 || sequence.Count > 0);
 
         if (adapterPath is null)
         {
@@ -395,7 +389,7 @@ public partial class Editor : Window
         {
             EngineDot.Fill = (Brush)FindResource("StatusOk");
             EngineButton.Visibility = Visibility.Collapsed;
-            EngineLabel.Text = $"{Vendor} pronto";
+            EngineLabel.Text = $"Pacote {Vendor} instalado";
         }
 
         if (editingSegmentScope && seg is not null && !seg.UseCustomNr)
@@ -412,6 +406,7 @@ public partial class Editor : Window
             };
         }
 
+        AmdResolutionHint.Visibility = Vendor == "AMD" ? Visibility.Visible : Visibility.Collapsed;
         UpdateHeaderClipInfo();
         UpdateVideoTag();
 
@@ -423,8 +418,8 @@ public partial class Editor : Window
 
         SplitButton.IsEnabled = !busy && CanSplitAt(timelinePosition);
         DuplicateSegmentButton.IsEnabled = !busy && seg is not null && !segLocked;
-        ToggleSegmentButton.IsEnabled = !busy && seg is not null;
-        ToggleSegmentIcon.Text = seg is { Enabled: false } ? EyeOffGlyph : EyeGlyph;
+        ToggleSegmentButton.IsEnabled = !busy && seg is not null && !segLocked;
+        ToggleSegmentButton.Header = seg is { Enabled: false } ? "Ativar trecho" : "Desativar trecho";
         CloseGapsButton.IsEnabled = !busy && !sequence.IsEmpty;
         DeleteSegmentButton.IsEnabled = !busy && seg is not null && !segLocked;
         UndoButton.IsEnabled = !busy && history.CanUndo;
@@ -432,7 +427,7 @@ public partial class Editor : Window
 
         AddTrackButton.IsEnabled = !busy && sequence.TrackCount < TimelineSequence.MaxTracks;
         var topIdx = sequence.TrackCount - 1;
-        RemoveTrackButton.IsEnabled = !busy && sequence.TrackCount > 2 && !sequence.Segments.Any(s => s.TrackIndex == topIdx);
+        RemoveTrackButton.IsEnabled = !busy && sequence.TrackCount > 2 && !sequence.IsTrackLocked(topIdx) && !sequence.Segments.Any(s => s.TrackIndex == topIdx);
 
         SnapDot.Fill = (Brush)FindResource(snapEnabled ? "Accent" : "TextMuted");
         FitTimelineButton.IsEnabled = !sequence.IsEmpty;
@@ -450,9 +445,11 @@ public partial class Editor : Window
         var activeSlices = sequence.ResolveComposition();
         if (IsBatchExportMode)
         {
-            ExportModeHint.Text = "1 MP4 por vídeo da biblioteca";
-            ExportButton.IsEnabled = hasEngine && clips.Count > 0;
-            ExportButton.Content = clips.Count > 1 ? $"Exportar lote ({clips.Count})" : "Exportar vídeo";
+            var edited = EditedExportRadio.IsChecked == true;
+            var count = edited ? sequence.EnabledCount : clips.Count;
+            ExportModeHint.Text = edited ? "1 MP4 por trecho ativo, com seus cortes e NR" : "Arquivos inteiros da biblioteca, com NR global";
+            ExportButton.IsEnabled = hasEngine && count > 0;
+            ExportButton.Content = edited ? $"Exportar trechos ({count})" : $"Exportar originais ({count})";
         }
         else
         {
@@ -586,7 +583,8 @@ public partial class Editor : Window
         }
 
         var timelineWasEmpty = sequence.IsEmpty;
-        var shouldInsertOnTimeline = timelineWasEmpty || dropTimelineSeconds.HasValue || targetTrackIndex.HasValue;
+        var track = Math.Clamp(targetTrackIndex ?? activeTrackIndex, 0, TimelineSequence.MaxTracks - 1);
+        var shouldInsertOnTimeline = !sequence.IsTrackLocked(track) && (timelineWasEmpty || dropTimelineSeconds.HasValue || targetTrackIndex.HasValue);
         var addedItems = new List<ClipItem>();
         var allResolved = new List<ClipItem>();
 
@@ -610,7 +608,6 @@ public partial class Editor : Window
             if (!timelineWasEmpty)
                 history.PushUndo(sequence, selectedSegmentId);
 
-            var track = Math.Clamp(targetTrackIndex ?? activeTrackIndex, 0, TimelineSequence.MaxTracks - 1);
             var cursorTime = dropTimelineSeconds ?? sequence.GetTrackEnd(track);
             TimelineSegment? firstAddedSeg = null;
 
@@ -621,6 +618,7 @@ public partial class Editor : Window
                     item.Duration = dur;
 
                 var seg = sequence.AddClipAt(item.Path, dur, cursorTime, track, colorIndex: GetColorIndexForSource(item.Path));
+                if (seg is null) continue;
                 cursorTime = seg.TimelineEnd;
                 firstAddedSeg ??= seg;
             }
@@ -766,6 +764,11 @@ public partial class Editor : Window
     private void RemoveSelected(object sender, RoutedEventArgs e)
     {
         if (clip is null || busy) return;
+        if (sequence.UsesLockedTrack(clip.Path))
+        {
+            Status.Text = "Desbloqueie a faixa antes de remover esta origem.";
+            return;
+        }
         var target = clip;
         var index = clips.IndexOf(target);
 
@@ -783,7 +786,7 @@ public partial class Editor : Window
 
     private void ClearQueue(object sender, RoutedEventArgs e)
     {
-        if (busy) return;
+        if (busy || sequence.Tracks.Any(t => t.Locked)) return;
         Pause();
         clips.Clear();
         sequence.Clear();
@@ -857,9 +860,9 @@ public partial class Editor : Window
 
     private void ApplyPresetValues(NrPreset preset)
     {
+        if (!PresetsGrid.IsEnabled) return;
         var targets = layers.Where(l => l.Enabled).ToList();
-        if (targets.Count == 0 && layers.Count > 0)
-            targets.Add(layers[0]);
+        if (targets.Count == 0) return;
 
         foreach (var layer in targets)
             layer.ApplyPreset(preset);
@@ -877,7 +880,7 @@ public partial class Editor : Window
             return;
         }
 
-        var source = layers.FirstOrDefault(l => l.Enabled) ?? layers.FirstOrDefault();
+        var source = layers.FirstOrDefault(l => l.Enabled);
         if (source is null) return;
 
         var number = customPresets.Count + 1;
@@ -1073,7 +1076,7 @@ public partial class Editor : Window
         }
         if ((modifiers == ModifierKeys.None || modifiers == ModifierKeys.Shift) && e.Key == Key.Delete && !busy)
         {
-            if (SelectedSegment is not null && e.OriginalSource is not ListBoxItem)
+            if (SelectedSegment is not null && !Queue.IsKeyboardFocusWithin)
             {
                 DeleteSelectedSegment(ripple: modifiers == ModifierKeys.Shift);
                 e.Handled = true;
@@ -1164,7 +1167,7 @@ public partial class Editor : Window
             CodecIndex: HevcRadio.IsChecked == true ? 1 : 0,
             Layers: globalProfile.Layers,
             CustomEngines: customEngines.Count > 0 ? new Dictionary<string, string>(customEngines) : null,
-            ExportModeIndex: IsBatchExportMode ? 1 : 0,
+            ExportModeIndex: EditedExportRadio.IsChecked == true ? 2 : BatchExportRadio.IsChecked == true ? 1 : 0,
             QueueWidth: queueOpen && QueueColumn.ActualWidth >= 180 ? QueueColumn.ActualWidth : 256,
             InspectorWidth: InspectorColumn.ActualWidth >= 276 ? InspectorColumn.ActualWidth : 324,
             TimelineHeight: TimelineRow.ActualHeight >= 190 ? TimelineRow.ActualHeight : 236,

@@ -71,7 +71,7 @@ internal static class SettingsStore
 
     internal static List<NrLayer> ToNrLayers(UserSettings settings, int limit)
     {
-        if (settings.Layers is not { Count: > 0 }) return [new NrLayer()];
+        if (settings.Layers is null) return [new NrLayer()];
         return settings.Layers
             .Take(limit)
             .Select(saved => new NrLayer

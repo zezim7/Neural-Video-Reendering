@@ -66,14 +66,14 @@
                         </StackPanel>
                     </Button>
                     <Button x:Name="ScreenPrintButton" Style="{StaticResource TitleBarButton}" Click="ScreenPrintClick"
-                            Margin="0,0,2,0" ToolTip="Capturar tela e aplicar DLSS 5 / NR (Ctrl+Shift+P)">
+                            Margin="0,0,2,0" ToolTip="Capturar tela e aplicar NR (Ctrl+Shift+P)">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE7A8;" FontSize="12" Foreground="{StaticResource Accent}" Margin="0,0,6,0"/>
                             <TextBlock Text="Print de tela" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                     <Button x:Name="ImagePrintButton" Style="{StaticResource TitleBarButton}" Click="ImagePrintClick"
-                            ToolTip="Abrir imagem (PNG/JPG/BMP) ou colar (Ctrl+V) e aplicar DLSS 5 / NR">
+                            ToolTip="Abrir imagem (PNG/JPG/BMP) ou colar (Ctrl+V) e aplicar NR">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource IconGlyph}" Text="&#xEB9F;" FontSize="12" Margin="0,0,6,0"/>
                             <TextBlock Text="Imagem" VerticalAlignment="Center"/>
@@ -310,7 +310,7 @@
                                 <Button x:Name="MuteButton" Style="{StaticResource IconButton}" Click="MuteClick" Padding="4,3" Margin="0,0,2,1" ToolTip="Silenciar ou ativar áudio (M)">
                                     <TextBlock x:Name="MuteIcon" Style="{StaticResource IconGlyph}" Text="&#xE767;" FontSize="11"/>
                                 </Button>
-                                <Button x:Name="FramePrintButton" Click="FramePrintClick" Padding="5,3" Margin="0,0,3,1" ToolTip="Renderizar frame atual com DLSS 5 / NR (P)">
+                                <Button x:Name="FramePrintButton" Click="FramePrintClick" Padding="5,3" Margin="0,0,3,1" ToolTip="Renderizar frame atual com NR (P)">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE722;" FontSize="10.5" Foreground="{StaticResource Accent}" Margin="0,0,4,0"/>
                                         <TextBlock Text="Print NR" FontSize="11" VerticalAlignment="Center"/>
@@ -326,17 +326,15 @@
                                         <TextBlock Text="Tesoura" FontSize="11" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="DuplicateSegmentButton" Style="{StaticResource IconButton}" Click="DuplicateSegmentClick" Padding="4,3" Margin="0,0,1,1" ToolTip="Duplicar clipe selecionado (Ctrl+D)">
-                                    <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8C8;" FontSize="10.5"/>
-                                </Button>
-                                <Button x:Name="ToggleSegmentButton" Style="{StaticResource IconButton}" Click="ToggleSegmentEnabledClick" Padding="4,3" Margin="0,0,1,1" ToolTip="Ativar ou pular clipe na composição (E)">
-                                    <TextBlock x:Name="ToggleSegmentIcon" Style="{StaticResource IconGlyph}" Text="&#xE7B3;" FontSize="10.5"/>
-                                </Button>
-                                <Button x:Name="CloseGapsButton" Style="{StaticResource IconButton}" Click="CloseGapsClick" Padding="4,3" Margin="0,0,1,1" ToolTip="Fechar espaços vazios em todas as faixas (G)">
-                                    <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE8A9;" FontSize="10.5"/>
-                                </Button>
-                                <Button x:Name="DeleteSegmentButton" Style="{StaticResource IconButton}" Click="DeleteSegmentClick" Padding="4,3" Margin="0,0,2,1" ToolTip="Remover clipe (Delete · Shift+Delete fecha o espaço)">
-                                    <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE74D;" FontSize="10.5" Foreground="{StaticResource DangerBorder}"/>
+                                <Button Click="OpenSegmentMenu" Content="Mais ▾" Padding="6,3" ToolTip="Mais ações de edição">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem x:Name="DuplicateSegmentButton" Header="Duplicar trecho" InputGestureText="Ctrl+D" Click="DuplicateSegmentClick"/>
+                                            <MenuItem x:Name="ToggleSegmentButton" Header="Desativar trecho" InputGestureText="E" Click="ToggleSegmentEnabledClick"/>
+                                            <MenuItem x:Name="CloseGapsButton" Header="Fechar espaços" InputGestureText="G" Click="CloseGapsClick"/>
+                                            <MenuItem x:Name="DeleteSegmentButton" Header="Remover trecho" InputGestureText="Delete" Click="DeleteSegmentClick"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
                                 </Button>
 
                                 <Border Width="1" Height="15" Background="{StaticResource BorderSubtle}" Margin="1,0,2,1" VerticalAlignment="Center"/>
@@ -476,7 +474,8 @@
                                 <Border DockPanel.Dock="Right" Background="{StaticResource RecessedBg}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="4" Padding="2">
                                     <StackPanel Orientation="Horizontal">
                                         <RadioButton x:Name="SequenceExportRadio" Content="Sequência" GroupName="ExportModeGroup" IsChecked="True" Style="{StaticResource SegmentedOption}" Checked="ExportModeChanged" ToolTip="Renderizar composição das faixas e unir em 1 MP4 final"/>
-                                        <RadioButton x:Name="BatchExportRadio" Content="Lote" GroupName="ExportModeGroup" Style="{StaticResource SegmentedOption}" Checked="ExportModeChanged" ToolTip="Exportar cada vídeo da biblioteca separadamente"/>
+                                        <RadioButton x:Name="EditedExportRadio" Content="Trechos" GroupName="ExportModeGroup" Style="{StaticResource SegmentedOption}" Checked="ExportModeChanged" ToolTip="Um MP4 por trecho ativo de faixa visível, inclusive sobreposições"/>
+                                        <RadioButton x:Name="BatchExportRadio" Content="Originais" GroupName="ExportModeGroup" Style="{StaticResource SegmentedOption}" Checked="ExportModeChanged" ToolTip="Exportar cada vídeo da biblioteca separadamente"/>
                                     </StackPanel>
                                 </Border>
                                 <TextBlock Text="MODO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
@@ -550,6 +549,7 @@
                         <TextBlock Text="MODELO NR" Style="{StaticResource SectionLabel}" Margin="0,10,0,5"/>
                         <ComboBox x:Name="NrVersion" DisplayMemberPath="Label" SelectionChanged="ChangeVersion" AutomationProperties.Name="Versão do NR"/>
 
+                        <TextBlock x:Name="AmdResolutionHint" Style="{StaticResource SecondaryText}" Text="AMD · processamento interno limitado a 1080p, inclusive em Nativa e 1440p." TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
                         <DockPanel Margin="0,10,0,5">
                             <Button x:Name="SavePresetButton" DockPanel.Dock="Right" Style="{StaticResource SubtleButton}" Padding="5,1" FontSize="10.5"
                                     Click="SaveCustomPresetClick" ToolTip="Salvar ajuste atual como preset personalizado">
@@ -606,19 +606,7 @@
                                                         Click="ToggleLayerExpandClick" ToolTip="Abrir ajustes da camada"
                                                         AutomationProperties.Name="{Binding HeaderAccessibilityName}">
                                                     <DockPanel>
-                                                        <TextBlock DockPanel.Dock="Left" FontFamily="{StaticResource IconFont}" FontSize="10"
-                                                                   Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,7,0">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Text" Value="&#xE76C;"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding Expanded}" Value="True">
-                                                                            <Setter Property="Text" Value="&#xE70D;"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
+                                                        <TextBlock DockPanel.Dock="Left" Text="{Binding Chevron}" FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,7,0"/>
                                                         <StackPanel>
                                                             <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="12"/>
                                                             <TextBlock Text="{Binding Summary}" Style="{StaticResource SecondaryText}" FontSize="11"/>

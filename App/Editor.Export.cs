@@ -298,7 +298,7 @@ public partial class Editor
         encodedLayers = profile.EncodeActiveLayers();
         if (encodedLayers.Length == 0)
         {
-            Status.Text = "Ative a melhoria NR e ao menos 1 camada para aplicar DLSS 5 no print.";
+            Status.Text = "Ative a melhoria NR e ao menos 1 camada para aplicar NR no print.";
             return false;
         }
         return true;
@@ -366,7 +366,7 @@ public partial class Editor
         var layerCount = encodedLayers.Length;
 
         PrintResult? result = null;
-        await RunExportTask("Renderizando print do frame com DLSS 5…", async cancellationToken =>
+        await RunExportTask("Renderizando print do frame com NR…", async cancellationToken =>
         {
             result = await PrintProcessor.ProcessVideoFrameAsync(
                 exporter,
@@ -432,7 +432,7 @@ public partial class Editor
         if (!TryGetPrintContext(null, out _, out _, out _)) return;
         var dialog = new OpenFileDialog
         {
-            Title = "Selecionar imagem para aplicar DLSS 5 / NR",
+            Title = "Selecionar imagem para aplicar NR",
             Filter = ImageFilter
         };
         if (dialog.ShowDialog(this) == true)
@@ -497,7 +497,7 @@ public partial class Editor
         var layerCount = encodedLayers.Length;
 
         PrintResult? result = null;
-        await RunExportTask("Renderizando print com DLSS 5…", async cancellationToken =>
+        await RunExportTask("Renderizando print com NR…", async cancellationToken =>
         {
             result = await PrintProcessor.ProcessImageAsync(
                 exporter,
