@@ -12,7 +12,6 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        Application.ResourceAssembly = typeof(Editor).Assembly;
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(new ResourceDictionary
         {

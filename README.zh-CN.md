@@ -2,19 +2,29 @@
 
 [English](README.md) · [Português (BR)](README.pt-BR.md) · **简体中文**
 
-适用于 Windows 11 x64 的全离线神经视频渲染、剪辑与 DLSS 5 单帧/图像处理工具。通过内置的 Veyra 引擎在本地 GPU 运行，无需联网。
+适用于 Windows 11 x64 的视频编辑器。可在最多六条轨道上剪辑、使用 GPU 进行神经渲染，并导出 MP4。每个便携包包含对应显卡厂商的 Veyra 引擎。
 
-![Video NR 主界面](docs/screenshots/editor-main.png)
+![双轨时间线和片段导出界面](docs/screenshots/editor-main.png)
 
-## 主要功能
+## 时间线与导出
 
-- **多层神经渲染（最多 4 层）** — 独立设置每层的内部处理分辨率（`480p` 至 `1440p` 或 `原生`）、**强度**、**色调**与**结构**，支持一键预设（`Sutil` / `Equilibrado` / `Máximo`）、复制图层及双击滑块重置为 `1.00`。
-- **DLSS 5 / NR 截图与图像处理** — 一键渲染当前视频帧（`P`）、区域/显示器截图（`Ctrl+Shift+P`）、打开静态图片（`PNG` / `JPG` / `BMP` / `WEBP` / `TIFF`）或直接粘贴剪贴板图片（`Ctrl+V`）。内置交互式对比窗口，支持前后拖动对比、`100%`（1:1）像素级平移查看、光标焦点缩放切换、复制及保存 PNG/JPG。
-- **精准剪辑与缩略图队列** — 支持时间刻度拖动、按真实检测帧率逐帧微调（`,` / `.`，未知时回退至 `30 fps`）、剪辑手柄与 `HH:MM:SS.mmm` 时间码输入。可折叠队列自动提取视频缩略图、分辨率与帧率信息，并独立保存每个片段的剪辑区间。
-- **批量导出 MP4（H.264 / HEVC）** — 拖入多个视频或整个文件夹即可按队列依次导出，保留源分辨率、帧率与兼容音轨。
-- **原生 Windows 11 界面** — .NET 8 WPF 暗室风格界面，采用一体化 `WindowChrome` 标题栏、`Segoe Fluent Icons` 图标、Per-Monitor DPI v2 适配与自动配置持久化。
+将视频从素材库拖到轨道上。重叠时，使用最上方可见轨道中已启用的片段。播放及序列导出会跳过空隙。锁定轨道可保护其内容。可在播放头位置切分、拖动片段边缘，或用 `HH:MM:SS.mmm` 输入源时间码。
 
-![DLSS 5 / NR 前后对比预览窗口](docs/screenshots/print-preview.png)
+| 界面选项 | 输出 |
+| --- | --- |
+| Sequência | 将可见剪辑导出为一个 MP4。拼接时以首段尺寸为准，其他宽高比通过黑边保留；每段的第一条音轨合成为立体声 AAC。 |
+| Trechos | 可见轨道上每个已启用片段单独导出，包括被遮挡的片段，保留各自的裁剪范围与 NR 设置。 |
+| Originais | 将素材库中的每个完整文件使用全局 NR 设置单独导出。 |
+
+全局 NR 最多支持四层，每层分别设置分辨率、强度、色调和结构。选中片段可覆盖全局设置。AMD 内部神经处理分辨率上限为 1080p，选择原生或 1440p 时也适用。
+
+## 帧与静态图像
+
+按 `P` 处理当前视频帧，按 `Ctrl+Shift+P` 截取屏幕区域，或按 `Ctrl+V` 粘贴图片。也可以打开图片文件。逐帧导航使用 Windows 提供的显示时间戳，支持可变帧率。
+
+对比视图中，**Sem NR**（关闭 NR）与 **NR** 使用同一引擎及输出编码。静态图像以单个未压缩 YUV 帧输入，最大尺寸为 4096 × 2304，透明部分与黑色背景合成。可按 100% 查看、复制或保存为 PNG 或 JPEG。
+
+![对比器控件，两侧均使用同一测试图](docs/screenshots/print-preview.png)
 
 ## 下载与使用
 
@@ -36,7 +46,7 @@
 
 > [!NOTE]
 > AMD 模式需要安装 HIP 运行时，目前处于实验阶段。
-> 预览播放器依赖 Windows 系统解码器；即使某些格式无法直接预览，仍可通过导出队列或单帧渲染正常处理。
+> 预览和时间戳读取依赖 Windows 已安装的解码器。导出使用引擎自带的解码器。
 
 ## 快捷键
 
@@ -45,25 +55,30 @@
 | 快捷键 | 功能 |
 | :--- | :--- |
 | `Space` 或点击画面 | 播放 / 暂停 |
-| `,` / `.` | 按片段真实帧率后退 / 前进 1 帧 |
+| `,` / `.` | 按显示时间戳前后移动一帧 |
 | `←` / `→` | 后退 / 前进 1 秒 |
 | `Shift` + `←` / `→` | 后退 / 前进 5 秒 |
 | `I` / `O` | 在当前位置标记剪辑入点 / 出点 |
 | `M` | 静音 / 取消静音预览音频 |
 | `Q` | 显示 / 隐藏队列侧栏 |
-| `P` | 使用 DLSS 5 / NR 渲染当前视频帧 |
-| `Ctrl` + `Shift` + `P` | 屏幕截图并应用 DLSS 5 / NR |
-| `Ctrl` + `V` | 粘贴剪贴板图片应用 DLSS 5 / NR |
+| `P` | 使用 NR 渲染当前视频帧 |
+| `Ctrl` + `Shift` + `P` | 屏幕截图并应用 NR |
+| `Ctrl` + `V` | 粘贴剪贴板图片应用 NR |
 | `Ctrl` + `O` | 打开视频文件 |
-| `Delete` | 从队列移除当前选中的视频 |
+| `C` / `S` | 在播放头切分 |
+| `Ctrl+D` / `E` | 复制 / 启用或停用所选片段 |
+| `G` / `F` | 闭合未锁定轨道的空隙 / 适应时间线宽度 |
+| `Delete` | 删除所选片段；焦点位于素材库时移除库内项目 |
+| `Shift+Delete` | 删除片段并闭合该轨的空隙 |
+| `Ctrl+Z` / `Ctrl+Y` 或 `Ctrl+Shift+Z` | 撤销 / 重做 |
 
-### 对比预览窗口（`DLSS 5 / NR`）
+### 对比预览窗口（`NR`）
 
 | 快捷键 / 操作 | 功能 |
 | :--- | :--- |
 | `1` / `2` | 切换「适应窗口」与 `100%`（1:1）缩放 |
 | 双击画面或 `Ctrl` + 滚轮 | 以光标为中心切换适应 / `100%` |
-| 中键拖动，或在 `NR` / `Original` 模式及按住 `Space` 时左键拖动 | `100%` 缩放下平移画面 |
+| 中键拖动，或在 `NR` / `Sem NR` 模式及按住 `Space` 时左键拖动 | `100%` 缩放下平移画面 |
 | `←` / `→`（`Shift` + `←` / `→`） | 对比模式下微调分割线 ±2%（±10%） |
 | `Ctrl` + `C` | 复制渲染结果到剪贴板 |
 | `Ctrl` + `S` | 将渲染结果保存为 PNG |
@@ -81,6 +96,7 @@
 ```powershell
 # 运行单元测试
 dotnet run --project Tests/VideoNR.Tests.csproj
+dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj
 
 # 编译编辑器 (build/VideoNR.exe) 与原生适配器 (build/Engine.exe)
 ./Build.ps1
@@ -97,13 +113,13 @@ python scripts/package-windows.py
 │   ├── Assets/                 # 多分辨率应用图标
 │   ├── Helpers/                # DWM 深色模式与 WindowChrome 辅助类
 │   ├── Imaging/                # GDI 截图、WIC 图片读写、视频缩略图与帧率探测
-│   ├── Models/                 # ClipItem, NrLayer, TrimSelection
+│   ├── Models/                 # ClipItem, NrLayer, TimelineSequence, TimelineSegment, TimelineHistory
 │   ├── Services/               # EngineLocator, VideoExporter, PrintProcessor, MediaFoundationFrameCodec, MediaFoundationInterop, RawImage, SettingsStore
 │   ├── Themes/                 # 共享暗室样式主题 (Theme.xaml)
 │   ├── Editor.xaml             # 主界面布局
 │   ├── Editor.xaml.cs          # 标题栏、队列、预设与快捷键
-│   ├── Editor.Playback.cs      # 播放器、时间标尺、剪辑、拖动与真实帧率逐帧步进
-│   ├── Editor.Export.cs        # 批量导出与 DLSS 5 截图处理流程
+│   ├── Editor.Playback.cs      # 播放器、时间标尺、剪辑、拖动与按显示时间戳逐帧步进
+│   ├── Editor.Export.cs        # 批量导出与 NR 截图处理流程
 │   ├── PrintPreviewWindow.*    # 交互式前后对比与 1:1 平移缩放预览窗口
 │   └── ScreenCaptureOverlay.*  # 多显示器区域截图遮罩窗口
 ├── Engine.cpp                  # 原生 C++20 共享内存适配器（支持 --max-frames）
