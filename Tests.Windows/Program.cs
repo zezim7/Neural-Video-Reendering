@@ -113,12 +113,23 @@ internal static class Program
     {
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
         window.UpdateLayout();
-        var visual = element ?? (FrameworkElement)window.Content;
+        var visual = (FrameworkElement)window.Content;
         var bitmap = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth),
             (int)Math.Ceiling(visual.ActualHeight), 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);
+        BitmapSource capture = bitmap;
+        if (element is not null)
+        {
+            var bounds = element.TransformToAncestor(visual).TransformBounds(new Rect(element.RenderSize));
+            capture = new CroppedBitmap(bitmap, new Int32Rect((int)Math.Floor(bounds.Left),
+                (int)Math.Floor(bounds.Top), (int)Math.Floor(bounds.Width), (int)Math.Floor(bounds.Height)));
+        }
+        var pixels = new byte[capture.PixelWidth * capture.PixelHeight * 4];
+        capture.CopyPixels(pixels, capture.PixelWidth * 4, 0);
+        if (pixels.Where((_, offset) => offset % 4 == 2).Max() < 120)
+            throw new InvalidOperationException($"Captura de interface vazia: {name}");
         var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        encoder.Frames.Add(BitmapFrame.Create(capture));
         var folder = Directory.CreateDirectory("ui-snapshots");
         using var stream = File.Create(Path.Combine(folder.FullName, name));
         encoder.Save(stream);

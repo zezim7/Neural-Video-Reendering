@@ -6,6 +6,9 @@ App/bin/
 App/obj/
 Tests/bin/
 Tests/obj/
+Tests.Windows/bin/
+Tests.Windows/obj/
+ui-snapshots/
 
 # Python
 __pycache__/
