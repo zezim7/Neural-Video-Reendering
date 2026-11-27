@@ -109,6 +109,8 @@ dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-packa
 python scripts/package-windows.py
 ```
 
+Em GitHub Actions, uma execução manual monta e abre os dois ZIPs no Windows. A publicação de uma release requer marcar a opção correspondente.
+
 ### Estrutura do repositório
 
 ```text

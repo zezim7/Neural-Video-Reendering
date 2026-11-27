@@ -223,6 +223,11 @@ AssertEqual(3, NrLayer.InitialModelIndex("original", ["AMD"]), "AMD-only ZIP sel
 AssertEqual(4, NrLayer.InitialModelIndex("amd-original", ["AMD", "NVIDIA"]), "Installed preference retained");
 AssertEqual(0, SettingsStore.ToNrLayers(new UserSettings(Layers: []), 4).Count, "Empty NR profile survives reload");
 
+var oneFrameEdit = new TimelineSequence();
+var sourceForSplit = oneFrameEdit.AppendClip("60fps.mp4", 1)!;
+AssertTrue(oneFrameEdit.SplitSegmentAt(sourceForSplit.Id, 1.0 / 60) is not null, "Scissors can create a single-frame segment at 60 fps");
+AssertNear(1.0 / 60, oneFrameEdit.SnapshotComposition()[0].Duration, "Cloning preserves a one-frame edit");
+
 var cuts = new TimelineSequence();
 var baseClip = cuts.AddClipAt("first.mp4", 10, 0, 0, new TrimSelection(2, 6))!;
 var upperClip = cuts.AddClipAt("upper.mp4", 1, 1.0 / 60, 1)!;
@@ -239,6 +244,7 @@ cuts.Tracks[0].Locked = true;
 AssertTrue(cuts.AddClipAt("other.mp4", 2, 0, 0) is null, "Lock blocks insertion");
 AssertTrue(cuts.AppendClip("other.mp4", 2) is null, "Lock blocks append");
 AssertEqual(0, cuts.RemoveBySourcePath("first.mp4"), "Lock protects library removal");
+AssertTrue(!cuts.TryClear(), "Clear cannot bypass a track lock");
 AssertEqual(2, cuts.Count, "Locked edits leave all segments intact");
 
 var tempDir = Directory.CreateTempSubdirectory("VideoNR-Test-").FullName;
@@ -592,7 +598,7 @@ try
     AssertNear(4.0, splitRes.Value.Right.TimelineStart, "Split right TimelineStart");
     AssertNear(6.0, splitRes.Value.Right.Duration, "Split right duration");
     AssertTrue(splitRes.Value.Right.UseCustomNr && splitRes.Value.Right.CustomNr?.ActiveLayerCount == 1, "Split clones custom NR profile");
-    AssertTrue(seq.SplitSegmentAt(segA.Id, 0.01) is null, "SplitSegmentAt rejects cut too close to edge");
+    AssertTrue(seq.SplitSegmentAt(segA.Id, 0.0005) is null, "SplitSegmentAt rejects cut too close to edge");
 
     // Multi-track composition: add overlay clip on V2 from 2.0s to 5.0s covering split seam!
     var segOverlay = seq.AddClipAt("/videos/overlay.mp4", 3.0, timelineStart: 2.0, trackIndex: 1, colorIndex: 2)!;
@@ -706,7 +712,7 @@ try
     AssertTrue(!noOpHist.CanUndo && noOpHist.CanRedo, "Undo empty, Redo populated");
 
     var noOpSnap = noOpSeq.CaptureSnapshot();
-    AssertTrue(noOpSeq.SplitAllAt(0.01).Count == 0, "No-op split near start fails cleanly");
+    AssertTrue(noOpSeq.SplitAllAt(0.0005).Count == 0, "No-op split near start fails cleanly");
     AssertEqual(0, noOpSeq.CloseAllGaps(), "No-op CloseAllGaps finds nothing");
     AssertTrue(!noOpSeq.RemoveTopEmptyTrack(), "No-op RemoveTopEmptyTrack respects minimum 2 tracks");
     _ = noOpSnap; // not pushed on failed ops

@@ -50,7 +50,7 @@ internal sealed class TimelineTrackInfo
 
 internal sealed class TimelineSegment
 {
-    internal const double MinDuration = 0.05;
+    internal const double MinDuration = 0.001; // Smallest interval editable in the timecode fields.
 
     public Guid Id { get; init; } = Guid.NewGuid();
     public string SourcePath { get; }

@@ -109,6 +109,8 @@ dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-packa
 python scripts/package-windows.py
 ```
 
+手动运行 GitHub Actions 会在 Windows 上生成并打开两个便携包；勾选发布选项即可创建发行版。
+
 ### 项目结构
 
 ```text

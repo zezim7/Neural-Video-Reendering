@@ -109,6 +109,8 @@ dotnet run --project Tests.Windows/VideoNR.WindowsTests.csproj -- --verify-packa
 python scripts/package-windows.py
 ```
 
+A manual GitHub Actions run builds and opens both portable ZIPs on Windows. Select the release option to publish them.
+
 ### Repository Structure
 
 ```text

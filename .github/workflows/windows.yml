@@ -6,6 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       publish_release:
@@ -21,27 +22,10 @@ permissions:
   contents: write
 
 jobs:
-  prepare-vfr-fixture:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Gerar a amostra com timestamps independentes
-        run: |
-          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg; fi
-          python3 Tests/Fixtures/make-vfr.py
-          ffprobe -v error -select_streams v -show_entries frame=pts_time -of csv=p=0 Tests/Fixtures/variable-rate.mp4
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vfr-fixture
-          path: Tests/Fixtures/variable-rate.mp4
-      - name: Registrar amostra de regressão
-        if: github.head_ref == 'fix/timeline-export-fidelity' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          base64 -w0 Tests/Fixtures/variable-rate.mp4 | jq -Rs '{encoding:"base64",content:.}' | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha
   build-and-release:
-    needs: prepare-vfr-fixture
+    if: github.event.action != 'labeled' || github.event.label.name == 'test-packages'
+    env:
+      BUILD_PACKAGES: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'test-packages') }}
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -52,10 +36,6 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-      - uses: actions/download-artifact@v4
-        with:
-          name: vfr-fixture
-          path: Tests/Fixtures
       - name: Executar testes unitários
         run: dotnet run --project Tests/VideoNR.Tests.csproj
       - name: Verificar as janelas e capturar a interface
@@ -64,32 +44,21 @@ jobs:
         with:
           name: interface-windows
           path: ui-snapshots/*.png
-      - name: Registrar capturas para a atualização da documentação
-        if: github.head_ref == 'fix/timeline-export-fidelity' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          Get-ChildItem ui-snapshots/*.png | ForEach-Object {
-            $body = @{ content = [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName)); encoding = 'base64' } | ConvertTo-Json -Compress
-            $sha = $body | gh api -X POST "repos/$env:GITHUB_REPOSITORY/git/blobs" --input - --jq .sha
-            if ($LASTEXITCODE -ne 0) { throw 'Falha ao registrar captura.' }
-            Write-Host "$($_.Name) $sha"
-          }
       - name: Compilar o editor
         run: ./Build.ps1 -SelfContained
       - name: Configurar Python para empacotamento
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        if: env.BUILD_PACKAGES == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Empacotar o motor e o editor
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        if: env.BUILD_PACKAGES == 'true'
         run: python scripts/package-windows.py
       - name: Testar a primeira abertura dos ZIPs
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        if: env.BUILD_PACKAGES == 'true'
         run: ./scripts/test-package.ps1 -Directory dist
       - name: Disponibilizar pacote AMD
-        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'test-packages')
         uses: actions/upload-artifact@v4
         with:
           name: VideoNR-AMD-win64
@@ -97,7 +66,7 @@ jobs:
           compression-level: 0
           retention-days: 14
       - name: Disponibilizar pacote NVIDIA
-        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/timeline-export-fidelity'
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'test-packages')
         uses: actions/upload-artifact@v4
         with:
           name: VideoNR-NVIDIA-win64

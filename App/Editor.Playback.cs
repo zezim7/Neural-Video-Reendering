@@ -113,7 +113,7 @@ public partial class Editor
                 FitTimelineToViewport(keepAutoFit: true);
         }
 
-        var seek = pendingSourceSeek ?? Math.Min(0.03, naturalDuration);
+        var seek = pendingSourceSeek ?? 0;
         pendingSourceSeek = null;
         if (naturalDuration > 0)
             seek = Math.Clamp(seek, 0, naturalDuration);

@@ -790,10 +790,9 @@ public partial class Editor : Window
 
     private void ClearQueue(object sender, RoutedEventArgs e)
     {
-        if (busy || sequence.Tracks.Any(t => t.Locked)) return;
+        if (busy || !sequence.TryClear()) return;
         Pause();
         clips.Clear();
-        sequence.Clear();
         history.Clear();
         selectedSegmentId = null;
         activeTrackIndex = 0;
@@ -932,6 +931,7 @@ public partial class Editor : Window
                     "Intensidade {0:0.00} · Tom {1:0.00} · Estrutura {2:0.00}",
                     preset.Intensity, preset.Tone, preset.Structure)
             };
+            applyBtn.SetBinding(IsEnabledProperty, new System.Windows.Data.Binding(nameof(IsEnabled)) { Source = PresetsGrid });
             applyBtn.Click += (_, _) =>
             {
                 if (!busy)

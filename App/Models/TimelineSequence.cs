@@ -584,12 +584,14 @@ internal sealed class TimelineSequence
         }
     }
 
-    public void Clear()
+    public bool TryClear()
     {
+        if (tracks.Any(t => t.Locked)) return false;
         segments.Clear();
         tracks.Clear();
         tracks.Add(new TimelineTrackInfo(0));
         tracks.Add(new TimelineTrackInfo(1));
+        return true;
     }
 
     public TimelineStateSnapshot CaptureSnapshot() =>

@@ -40,6 +40,18 @@ internal static class Program
             editor.NrVersion.SelectedIndex = 3;
             if (editor.AmdResolutionHint.Visibility != Visibility.Visible)
                 throw new InvalidOperationException("O limite de resolução AMD deve ficar visível.");
+            editor.UpdateLayout();
+            var layer = editor.LayerCards.Items.Cast<NrLayer>().Single();
+            var chevron = Descendants(editor.LayerCards).OfType<TextBlock>().Single(t =>
+                t.GetBindingExpression(TextBlock.TextProperty)?.ParentBinding.Path.Path == nameof(NrLayer.Chevron));
+            layer.Expanded = true;
+            editor.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            if (chevron.Text != "▾") throw new InvalidOperationException("A seta deve acompanhar a camada expandida.");
+            layer.Expanded = false;
+            layer.Enabled = false;
+            if (editor.PresetsGrid.IsEnabled || editor.SavePresetButton.IsEnabled)
+                throw new InvalidOperationException("Predefinições exigem uma camada ativa.");
+            layer.Enabled = true;
             Snapshot(editor, "editor-main.png");
 
             var preview = new PrintPreviewWindow(new PrintResult(chart, chart, false),
@@ -84,6 +96,16 @@ internal static class Program
             throw new InvalidOperationException("O trecho exportado deve durar meio segundo.");
         File.WriteAllText(Path.Combine(folder, "parameters.txt"), $"Model: {model.Tag}\nLayer: {layers[0]}\nTrim: 0.25–0.75 s\n");
         Console.WriteLine(folder);
+    }
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            yield return child;
+            foreach (var descendant in Descendants(child)) yield return descendant;
+        }
     }
 
     private static void Snapshot(Window window, string name)
