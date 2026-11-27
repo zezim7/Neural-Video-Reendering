@@ -52,7 +52,8 @@ internal static class Program
             if (editor.PresetsGrid.IsEnabled || editor.SavePresetButton.IsEnabled)
                 throw new InvalidOperationException("Predefinições exigem uma camada ativa.");
             layer.Enabled = true;
-            Snapshot(editor, "editor-main.png");
+            editor.QueueToggleButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Snapshot(editor, "editor-timeline.png", editor.TimelineDeck);
 
             var preview = new PrintPreviewWindow(new PrintResult(chart, chart, false),
                 "Padrão de teste", 1, "barras", dir) { Owner = editor };
@@ -108,11 +109,11 @@ internal static class Program
         }
     }
 
-    private static void Snapshot(Window window, string name)
+    private static void Snapshot(Window window, string name, FrameworkElement? element = null)
     {
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
         window.UpdateLayout();
-        var visual = (FrameworkElement)window.Content;
+        var visual = element ?? (FrameworkElement)window.Content;
         var bitmap = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth),
             (int)Math.Ceiling(visual.ActualHeight), 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);

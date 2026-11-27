@@ -248,7 +248,7 @@
                 <GridSplitter Grid.Row="1" Style="{StaticResource HorizontalHairlineSplitter}" ResizeDirection="Rows"/>
 
                 <!-- Multi-Track NLE Timeline Deck -->
-                <Border Grid.Row="2" Background="{StaticResource ChromeBg}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="12,7,12,7">
+                <Border x:Name="TimelineDeck" Grid.Row="2" Background="{StaticResource ChromeBg}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="12,7,12,7">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -421,15 +421,15 @@
                         </Border>
 
                         <!-- Row 2: Sequence Stats + Selected Segment Precision Trim + Timecode -->
-                        <DockPanel Grid.Row="2" Margin="0,6,0,0" LastChildFill="False">
-                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                        <WrapPanel Grid.Row="2" Margin="0,6,0,0">
+                            <StackPanel Margin="0,0,12,3" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock x:Name="SequenceSummary" Text="Sequência vazia" Style="{StaticResource SecondaryText}" FontSize="11.5" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="TrimLabel" Text="" Style="{StaticResource MutedText}" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
                             </StackPanel>
 
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock x:Name="TimeLabel" Text="00:00:00.000 / 00:00:00.000"
-                                           Style="{StaticResource MonoText}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <TextBlock x:Name="TimeLabel" Text="00:00:00.000 / 00:00:00.000"
+                                           Style="{StaticResource MonoText}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,12,3"/>
+                            <WrapPanel VerticalAlignment="Center">
                                 <Button x:Name="MarkStartButton" Content="[" FontFamily="{StaticResource MonoFont}" Click="MarkStartClick" Padding="7,4" FontSize="11.5" Margin="0,0,4,0" ToolTip="Aparar início do clipe selecionado na agulha (I)"/>
                                 <TextBox x:Name="StartTime" Tag="start" Style="{StaticResource TimecodeBox}" AutomationProperties.Name="Início do trecho"
                                          ToolTip="Início no vídeo fonte (HH:MM:SS.mmm · Enter para aplicar)"
@@ -442,8 +442,8 @@
                                 <Button x:Name="ResetTrimButton" Style="{StaticResource IconButton}" Click="ResetTrim" Padding="7,4" ToolTip="Restaurar duração completa do vídeo neste clipe">
                                     <TextBlock Style="{StaticResource IconGlyph}" Text="&#xE72C;" FontSize="11"/>
                                 </Button>
-                            </StackPanel>
-                        </DockPanel>
+                            </WrapPanel>
+                        </WrapPanel>
                     </Grid>
                 </Border>
             </Grid>
@@ -476,7 +476,7 @@
                                 </Border>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="SAÍDA MP4" Style="{StaticResource SectionLabel}"/>
-                                    <TextBlock x:Name="ExportModeHint" Text="1 vídeo final unificado" Style="{StaticResource MutedText}" FontSize="11" Margin="0,1,0,0"/>
+                                    <TextBlock x:Name="ExportModeHint" TextWrapping="Wrap" Text="1 vídeo final unificado" Style="{StaticResource MutedText}" FontSize="11" Margin="0,1,0,0"/>
                                 </StackPanel>
                             </DockPanel>
 

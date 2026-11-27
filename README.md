@@ -4,7 +4,7 @@
 
 Video editor for Windows 11 x64. Arrange clips on up to six tracks, apply neural rendering on the GPU, and export MP4 files. Each portable package includes the Veyra engine for the selected GPU vendor.
 
-![Editor with two tracks and per-segment export](docs/screenshots/editor-main.png)
+![Two-track timeline with playhead and trim controls](docs/screenshots/editor-main.png)
 
 ## Editing and export
 
